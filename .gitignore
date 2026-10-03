@@ -1,0 +1,25 @@
+# Dependencias
+node_modules
+
+# Build
+dist
+dist-ssr
+
+# Logs
+*.log
+npm-debug.log*
+
+# Entorno (secretos locales)
+.env
+.env.local
+.env.*.local
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# Editor / OS
+.DS_Store
+*.local
+.vscode/*
+!.vscode/extensions.json

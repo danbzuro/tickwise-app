@@ -1,0 +1,369 @@
+import { supabase } from "@/lib/supabase";
+import type { Database } from "@/data/database.types";
+import type {
+  Source,
+  FeedItem,
+  CronSchedule,
+  NoiseRules,
+  MaterialityGuidelines,
+  Organization,
+  Member,
+  MemberRole,
+  Materiality,
+} from "@/data/mock";
+
+type NoiseUpdate = Database["public"]["Tables"]["noise_rules"]["Update"];
+type OrgUpdate = Database["public"]["Tables"]["organizations"]["Update"];
+
+// --- Helpers de mapeo entre DB (lowercase/snake) y tipos de la app ---
+
+function toAppRole(r: string): MemberRole {
+  return (r.charAt(0).toUpperCase() + r.slice(1)) as MemberRole;
+}
+
+function toDbRole(r: MemberRole): "owner" | "admin" | "member" {
+  return r.toLowerCase() as "owner" | "admin" | "member";
+}
+
+// "08:00:00" -> "08:00"
+function toHHmm(time: string): string {
+  return time.slice(0, 5);
+}
+
+// Resultado de resolver la org del usuario actual
+export interface OrgContext {
+  orgId: string;
+  role: MemberRole;
+  isPlatformAdmin: boolean;
+}
+
+// Bundle con todo lo que necesita la app para una org
+export interface OrgData {
+  organization: Organization;
+  sources: Source[];
+  feedItems: FeedItem[];
+  schedules: CronSchedule[];
+  recipients: string[];
+  noiseRules: NoiseRules;
+  guidelines: MaterialityGuidelines;
+  members: Member[];
+  lastScrape: string;
+}
+
+// -----------------------------------------------------------------------------
+// Resuelve en qué organización está parado el usuario.
+// - Si es miembro activo: esa org + su rol.
+// - Si es super admin sin membresía: cae en la primera org (fallback).
+// -----------------------------------------------------------------------------
+export async function resolveOrgContext(): Promise<OrgContext | null> {
+  const { data: adminRow } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .maybeSingle();
+  const isPlatformAdmin = !!adminRow;
+
+  const { data: membership } = await supabase
+    .from("org_members")
+    .select("org_id, role")
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+
+  if (membership) {
+    return {
+      orgId: membership.org_id,
+      role: toAppRole(membership.role),
+      isPlatformAdmin,
+    };
+  }
+
+  // Super admin sin membresía: usa la primera org disponible
+  if (isPlatformAdmin) {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (org) return { orgId: org.id, role: "Owner", isPlatformAdmin };
+  }
+
+  return null;
+}
+
+// -----------------------------------------------------------------------------
+// Carga todos los datos de una organización en paralelo.
+// -----------------------------------------------------------------------------
+export async function loadOrgData(orgId: string): Promise<OrgData> {
+  const [
+    orgRes,
+    sourcesRes,
+    feedRes,
+    schedulesRes,
+    recipientsRes,
+    noiseRes,
+    guideRes,
+    membersRes,
+    runRes,
+  ] = await Promise.all([
+    supabase.from("organizations").select("*").eq("id", orgId).single(),
+    supabase.from("sources").select("*").eq("org_id", orgId).order("created_at"),
+    supabase
+      .from("feed_items")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("published_at", { ascending: false }),
+    supabase
+      .from("cron_schedules")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("run_time"),
+    supabase.from("recipients").select("email").eq("org_id", orgId),
+    supabase.from("noise_rules").select("*").eq("org_id", orgId).single(),
+    supabase.from("materiality_guidelines").select("*").eq("org_id", orgId),
+    supabase
+      .from("org_members")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("created_at"),
+    supabase
+      .from("cron_runs")
+      .select("finished_at, started_at, status")
+      .eq("org_id", orgId)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const org = orgRes.data!;
+  const noise = noiseRes.data!;
+
+  // Rúbrica: filas -> Record por nivel
+  const guidelines: MaterialityGuidelines = {
+    material: "",
+    potentially: "",
+    noteworthy: "",
+  };
+  for (const g of guideRes.data ?? []) {
+    guidelines[g.level as Materiality] = g.content;
+  }
+
+  // Último scrape (para el topbar)
+  let lastScrape = "No runs yet";
+  const run = runRes.data;
+  if (run) {
+    const iso = run.finished_at ?? run.started_at;
+    lastScrape = new Date(iso).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return {
+    organization: { name: org.name, logoUrl: org.logo_url },
+    sources: (sourcesRes.data ?? []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      tick: s.tick,
+      url: s.url,
+    })),
+    feedItems: (feedRes.data ?? []).map((f) => ({
+      id: f.id,
+      title: f.title,
+      summary: f.summary ?? "",
+      content: f.content ?? "",
+      whyItMatters: f.why_it_matters ?? "",
+      tick: f.tick,
+      source: "",
+      url: f.url,
+      publishedAt: f.published_at,
+      category: f.category,
+      materiality: f.materiality,
+    })),
+    schedules: (schedulesRes.data ?? []).map((s) => ({
+      id: s.id,
+      time: toHHmm(s.run_time),
+      enabled: s.enabled,
+    })),
+    recipients: (recipientsRes.data ?? []).map((r) => r.email),
+    noiseRules: {
+      excludeTerms: noise.exclude_terms,
+      excludeDomains: noise.exclude_domains,
+      maxLookbackHours: noise.max_lookback_hours,
+      minMateriality: noise.min_materiality,
+    },
+    guidelines,
+    members: (membersRes.data ?? []).map((m) => ({
+      id: m.id,
+      name: m.name ?? "",
+      email: m.email,
+      role: toAppRole(m.role),
+      status: m.status,
+    })),
+    lastScrape,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Mutaciones (cada una devuelve la fila creada cuando aplica)
+// -----------------------------------------------------------------------------
+
+export async function addSource(
+  orgId: string,
+  input: { name: string; tick: string; url: string }
+): Promise<Source> {
+  const { data, error } = await supabase
+    .from("sources")
+    .insert({ org_id: orgId, ...input })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, name: data.name, tick: data.tick, url: data.url };
+}
+
+export async function addSchedule(orgId: string): Promise<CronSchedule> {
+  const { data, error } = await supabase
+    .from("cron_schedules")
+    .insert({ org_id: orgId, run_time: "12:00", enabled: true })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, time: toHHmm(data.run_time), enabled: data.enabled };
+}
+
+export async function removeSchedule(id: string): Promise<void> {
+  const { error } = await supabase.from("cron_schedules").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateScheduleTime(id: string, time: string): Promise<void> {
+  const { error } = await supabase
+    .from("cron_schedules")
+    .update({ run_time: time })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function toggleSchedule(id: string, enabled: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("cron_schedules")
+    .update({ enabled })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function addRecipient(orgId: string, email: string): Promise<void> {
+  const { error } = await supabase
+    .from("recipients")
+    .insert({ org_id: orgId, email });
+  if (error) throw error;
+}
+
+export async function removeRecipient(orgId: string, email: string): Promise<void> {
+  const { error } = await supabase
+    .from("recipients")
+    .delete()
+    .eq("org_id", orgId)
+    .eq("email", email);
+  if (error) throw error;
+}
+
+export async function updateNoiseRules(
+  orgId: string,
+  patch: Partial<{
+    excludeTerms: string[];
+    excludeDomains: string[];
+    maxLookbackHours: number | null;
+    minMateriality: Materiality;
+  }>
+): Promise<void> {
+  const row: NoiseUpdate = {};
+  if (patch.excludeTerms !== undefined) row.exclude_terms = patch.excludeTerms;
+  if (patch.excludeDomains !== undefined)
+    row.exclude_domains = patch.excludeDomains;
+  if (patch.maxLookbackHours !== undefined)
+    row.max_lookback_hours = patch.maxLookbackHours;
+  if (patch.minMateriality !== undefined)
+    row.min_materiality = patch.minMateriality;
+
+  const { error } = await supabase
+    .from("noise_rules")
+    .update(row)
+    .eq("org_id", orgId);
+  if (error) throw error;
+}
+
+export async function updateGuideline(
+  orgId: string,
+  level: Materiality,
+  content: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("materiality_guidelines")
+    .update({ content })
+    .eq("org_id", orgId)
+    .eq("level", level);
+  if (error) throw error;
+}
+
+export async function updateOrganization(
+  orgId: string,
+  patch: { name?: string; logoUrl?: string | null }
+): Promise<void> {
+  const row: OrgUpdate = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.logoUrl !== undefined) row.logo_url = patch.logoUrl;
+  const { error } = await supabase
+    .from("organizations")
+    .update(row)
+    .eq("id", orgId);
+  if (error) throw error;
+}
+
+export async function inviteMember(
+  orgId: string,
+  email: string,
+  role: MemberRole
+): Promise<Member> {
+  const { data, error } = await supabase
+    .from("org_members")
+    .insert({
+      org_id: orgId,
+      email,
+      role: toDbRole(role),
+      status: "pending",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return {
+    id: data.id,
+    name: data.name ?? "",
+    email: data.email,
+    role: toAppRole(data.role),
+    status: data.status,
+  };
+}
+
+export async function removeMember(id: string): Promise<void> {
+  const { error } = await supabase.from("org_members").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// Dispara una corrida (mock): registra un cron_run y devuelve el label de "last scrape"
+export async function runCron(orgId: string): Promise<string> {
+  const now = new Date();
+  await supabase.from("cron_runs").insert({
+    org_id: orgId,
+    status: "success",
+    finished_at: now.toISOString(),
+  });
+  return now.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
