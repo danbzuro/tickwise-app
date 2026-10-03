@@ -434,12 +434,13 @@ export type Database = {
     }
     Functions: {
       create_organization: {
-        Args: { _name: string; _owner_email: string; _slug: string }
+        Args: { _name: string; _owner_email?: string; _slug?: string }
         Returns: string
       }
       is_org_admin: { Args: { _org: string }; Returns: boolean }
       is_org_member: { Args: { _org: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
+      slugify: { Args: { _text: string }; Returns: string }
     }
     Enums: {
       cron_run_status: "running" | "success" | "error"

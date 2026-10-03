@@ -207,6 +207,100 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
 }
 
 // -----------------------------------------------------------------------------
+// Super admin de plataforma: CRUD de organizaciones (tenants).
+// Las policies "platform full access" habilitan estas operaciones y el borrado
+// en cascada lo resuelven las FKs ON DELETE CASCADE del esquema.
+// -----------------------------------------------------------------------------
+
+// Fila de organización tal como la ve el panel de super admin
+export interface AdminOrg {
+  id: string;
+  name: string;
+  slug: string | null;
+  supportEmail: string | null;
+  primaryColor: string | null;
+  createdAt: string;
+  memberCount: number;
+  sourceCount: number;
+}
+
+// ¿El usuario actual es super admin de plataforma?
+export async function isPlatformAdmin(): Promise<boolean> {
+  const { data } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .maybeSingle();
+  return !!data;
+}
+
+// Lista todas las organizaciones con conteos de miembros y fuentes
+export async function listOrganizations(): Promise<AdminOrg[]> {
+  const { data, error } = await supabase
+    .from("organizations")
+    .select("*, org_members(count), sources(count)")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  return (data ?? []).map((o) => ({
+    id: o.id,
+    name: o.name,
+    slug: o.slug,
+    supportEmail: o.support_email,
+    primaryColor: o.primary_color,
+    createdAt: o.created_at,
+    // Supabase devuelve el agregado como [{ count }]
+    memberCount:
+      (o.org_members as unknown as { count: number }[] | null)?.[0]?.count ?? 0,
+    sourceCount:
+      (o.sources as unknown as { count: number }[] | null)?.[0]?.count ?? 0,
+  }));
+}
+
+// Crea una organización vía RPC (valida super admin del lado del servidor)
+export async function createOrganization(input: {
+  name: string;
+  slug?: string;
+  ownerEmail?: string;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("create_organization", {
+    _name: input.name,
+    _slug: input.slug?.trim() || undefined,
+    _owner_email: input.ownerEmail?.trim() || undefined,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+// Edita campos de una organización (nombre, slug y branding white-label)
+export async function updateOrganizationAdmin(
+  id: string,
+  patch: {
+    name?: string;
+    slug?: string | null;
+    supportEmail?: string | null;
+    primaryColor?: string | null;
+  }
+): Promise<void> {
+  const row: OrgUpdate = {};
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.slug !== undefined) row.slug = patch.slug;
+  if (patch.supportEmail !== undefined) row.support_email = patch.supportEmail;
+  if (patch.primaryColor !== undefined) row.primary_color = patch.primaryColor;
+
+  const { error } = await supabase
+    .from("organizations")
+    .update(row)
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Borra una organización. El cascade de las FKs elimina todos sus datos.
+export async function deleteOrganization(id: string): Promise<void> {
+  const { error } = await supabase.from("organizations").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// -----------------------------------------------------------------------------
 // Mutaciones (cada una devuelve la fila creada cuando aplica)
 // -----------------------------------------------------------------------------
 

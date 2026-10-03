@@ -9,6 +9,7 @@ import { SettingsGeneralPage } from "@/pages/SettingsGeneralPage";
 import { SettingsRulesPage } from "@/pages/SettingsRulesPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { AdminApp } from "@/components/AdminApp";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
 import type { OrgData } from "@/lib/api";
@@ -34,10 +35,35 @@ function FullScreenLoader() {
 export default function App() {
   const { session, loading, signOut } = useAuth();
 
+  // Resuelve si el usuario logueado es super admin de plataforma para decidir
+  // entre el panel de super admin (CRUD de orgs) y el workspace de una org.
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!session) {
+      setIsAdmin(null);
+      return;
+    }
+    void (async () => {
+      const admin = await api.isPlatformAdmin();
+      if (active) setIsAdmin(admin);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
   if (loading) return <FullScreenLoader />;
   if (!session) return <LoginPage />;
+  // Esperamos a saber el rol antes de montar un árbol u otro
+  if (isAdmin === null) return <FullScreenLoader />;
 
-  return <Workspace signOut={signOut} />;
+  return isAdmin ? (
+    <AdminApp signOut={signOut} />
+  ) : (
+    <Workspace signOut={signOut} />
+  );
 }
 
 // -----------------------------------------------------------------------------
