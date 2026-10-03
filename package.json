@@ -4,8 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "dotenv -e .env.local -- vite",
+    "prod": "dotenv -e .env -- vite",
     "build": "tsc -b && vite build",
+    "build:prod": "dotenv -e .env -- sh -c 'tsc -b && vite build'",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -23,6 +25,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "dotenv-cli": "^11.0.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "tailwindcss-animate": "^1.0.7",

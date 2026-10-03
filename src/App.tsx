@@ -9,6 +9,7 @@ import { SettingsGeneralPage } from "@/pages/SettingsGeneralPage";
 import { SettingsRulesPage } from "@/pages/SettingsRulesPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { LandingPage } from "@/pages/LandingPage";
 import { AdminApp } from "@/components/AdminApp";
 import { useAuth } from "@/context/AuthProvider";
 import * as api from "@/lib/api";
@@ -55,7 +56,15 @@ export default function App() {
   }, [session]);
 
   if (loading) return <FullScreenLoader />;
-  if (!session) return <LoginPage />;
+  // Sin sesión: landing pública en "/" y login en "/login"
+  if (!session) {
+    return (
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<LandingPage />} />
+      </Routes>
+    );
+  }
   // Esperamos a saber el rol antes de montar un árbol u otro
   if (isAdmin === null) return <FullScreenLoader />;
 
