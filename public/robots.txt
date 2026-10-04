@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /feed
+Disallow: /sources
+Disallow: /users
+Disallow: /settings
+
+Sitemap: https://tickwise.io/sitemap.xml
