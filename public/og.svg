@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="0.08" cy="0" r="0.75">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.16"/>
+      <stop offset="55%" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="cardShadow" x="-30%" y="-20%" width="160%" height="150%">
+      <feDropShadow dx="0" dy="22" stdDeviation="28" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="#09090b"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Marca -->
+  <rect x="64" y="56" width="52" height="52" rx="14" fill="#fafafa"/>
+  <g transform="translate(78,70)" fill="none" stroke="#18181b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+    <path d="M18 14h-8"/>
+    <path d="M15 18h-5"/>
+    <path d="M10 6h8v4h-8V6Z"/>
+  </g>
+  <text x="132" y="90" fill="#fafafa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="28" font-weight="600">Tickwise</text>
+
+  <!-- Titular -->
+  <text x="64" y="248" fill="#fafafa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="58" font-weight="650" letter-spacing="-1.4">Market-moving news.</text>
+  <text x="64" y="322" fill="#71717a" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="58" font-weight="650" letter-spacing="-1.4">Without the noise.</text>
+
+  <text x="64" y="386" fill="#a1a1aa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" font-weight="400">Headlines scored by materiality. A brief on your schedule.</text>
+
+  <!-- Tickers -->
+  <text x="64" y="500" fill="#71717a" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" letter-spacing="1.6">TRACK THE NAMES THAT MOVE YOUR BOOK</text>
+
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#d4d4d8">
+    <rect x="64" y="522" width="78" height="36" rx="8" fill="#18181b" stroke="#27272a"/>
+    <text x="103" y="546" text-anchor="middle">AAPL</text>
+
+    <rect x="152" y="522" width="78" height="36" rx="8" fill="#18181b" stroke="#27272a"/>
+    <text x="191" y="546" text-anchor="middle">NVDA</text>
+
+    <rect x="240" y="522" width="78" height="36" rx="8" fill="#18181b" stroke="#27272a"/>
+    <text x="279" y="546" text-anchor="middle">TSLA</text>
+
+    <rect x="328" y="522" width="78" height="36" rx="8" fill="#18181b" stroke="#27272a"/>
+    <text x="367" y="546" text-anchor="middle">MSFT</text>
+
+    <rect x="416" y="522" width="86" height="36" rx="8" fill="#18181b" stroke="#27272a"/>
+    <text x="459" y="546" text-anchor="middle">AMZN</text>
+  </g>
+
+  <!-- Preview del brief -->
+  <g filter="url(#cardShadow)">
+    <rect x="692" y="64" width="444" height="502" rx="22" fill="#ffffff"/>
+  </g>
+  <rect x="692" y="64" width="444" height="502" rx="22" fill="#ffffff" stroke="#e4e4e7"/>
+
+  <!-- Badges -->
+  <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" font-weight="600">
+    <rect x="720" y="96" width="62" height="28" rx="14" fill="#ffffff" stroke="#e4e4e7"/>
+    <text x="751" y="115" text-anchor="middle" fill="#18181b">NVDA</text>
+
+    <rect x="790" y="96" width="74" height="28" rx="14" fill="#ffffff" stroke="#e4e4e7"/>
+    <text x="827" y="115" text-anchor="middle" fill="#18181b">Market</text>
+
+    <rect x="872" y="96" width="84" height="28" rx="14" fill="#059669"/>
+    <text x="914" y="115" text-anchor="middle" fill="#ffffff">Material</text>
+
+    <text x="1104" y="115" text-anchor="end" fill="#a1a1aa" font-size="13" font-weight="500">08:00 AM</text>
+  </g>
+
+  <text x="720" y="172" fill="#18181b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="650">NVIDIA expands its data</text>
+  <text x="720" y="204" fill="#18181b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="24" font-weight="650">center platform</text>
+
+  <text x="720" y="246" fill="#71717a" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16">New hyperscale deals drive GPU demand</text>
+  <text x="720" y="270" fill="#71717a" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16">for training and inference.</text>
+
+  <rect x="720" y="304" width="388" height="156" rx="12" fill="#f4f4f5"/>
+  <circle cx="738" cy="332" r="5" fill="#f59e0b"/>
+  <text x="752" y="337" fill="#18181b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" font-weight="650">Why it matters</text>
+  <text x="740" y="372" fill="#52525b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16">Locked-in hyperscale demand</text>
+  <text x="740" y="396" fill="#52525b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16">underpins data-center revenue</text>
+  <text x="740" y="420" fill="#52525b" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="16">and defends margins.</text>
+
+  <text x="720" y="516" fill="#a1a1aa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14">1 of 3 relevant</text>
+  <text x="1108" y="516" text-anchor="end" fill="#a1a1aa" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14">2 screened as noise</text>
+</svg>
