@@ -576,15 +576,44 @@ export async function dismissFeedItems(ids: string[]): Promise<void> {
   const { error } = await supabase.rpc("dismiss_feed_items", { _ids: ids });
   if (error) throw error;
 }
-export async function runCron(orgId: string): Promise<OrgData> {
+export interface ScrapeSummary {
+  itemsFound: number;
+  itemsKept: number;
+  windowHours: number;
+}
+
+export async function runCron(
+  orgId: string
+): Promise<{ org: OrgData; summary: ScrapeSummary }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not authenticated");
+
   const { data, error } = await supabase.functions.invoke("scrape", {
     body: { orgId },
+    headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (error) throw new Error(await messageFromInvokeError(error));
   if (data && typeof data === "object" && "error" in data && data.error) {
     throw new Error(String(data.error));
   }
-  return loadOrgData(orgId);
+
+  const summary: ScrapeSummary = {
+    itemsFound:
+      data && typeof data === "object" && typeof data.itemsFound === "number"
+        ? data.itemsFound
+        : 0,
+    itemsKept:
+      data && typeof data === "object" && typeof data.itemsKept === "number"
+        ? data.itemsKept
+        : 0,
+    windowHours:
+      data && typeof data === "object" && typeof data.windowHours === "number"
+        ? data.windowHours
+        : 0,
+  };
+  return { org: await loadOrgData(orgId), summary };
 }
 
 async function messageFromInvokeError(error: unknown): Promise<string> {
@@ -597,5 +626,9 @@ async function messageFromInvokeError(error: unknown): Promise<string> {
       // El body no era JSON.
     }
   }
-  return error instanceof Error ? error.message : "Scrape failed";
+  const message = error instanceof Error ? error.message : "Scrape failed";
+  if (/failed to send|fetch|not found|404|503/i.test(message)) {
+    return "Scrape function is not reachable. Local: npm run functions. Prod: deploy scrape.";
+  }
+  return message;
 }

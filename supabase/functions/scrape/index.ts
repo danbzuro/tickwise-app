@@ -316,10 +316,9 @@ async function scoreChunk(
       .map((item) => [item.url as string, item])
   );
   return items.map((item) => {
-    const scored = byUrl.get(item.hit.url);
-    if (!scored) {
-      return { ...item, hit: { ...item.hit, aboutCompany: false } };
-    }
+    const scored = matchScored(item.hit.url, byUrl);
+    // Si el modelo no reconoció la URL, no tiramos la nota: queda el score heurístico.
+    if (!scored) return item;
     return {
       ...item,
       hit: {
@@ -338,6 +337,32 @@ async function scoreChunk(
       },
     };
   });
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return parsed.href.replace(/\/$/, "").toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+function matchScored<T extends { url?: string }>(
+  hitUrl: string,
+  byUrl: Map<string, T>
+): T | undefined {
+  const exact = byUrl.get(hitUrl);
+  if (exact) return exact;
+  const needle = normalizeUrl(hitUrl);
+  for (const [url, scored] of byUrl) {
+    const other = normalizeUrl(url);
+    if (other === needle || other.includes(needle) || needle.includes(other)) {
+      return scored;
+    }
+  }
+  return undefined;
 }
 
 function isMateriality(value: unknown): value is Materiality {

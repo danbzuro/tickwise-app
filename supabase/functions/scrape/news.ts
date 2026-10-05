@@ -391,14 +391,20 @@ async function fetchGoogleNews(query: string): Promise<NewsHit[]> {
 
   const response = await fetch(endpoint, {
     headers: {
-      "User-Agent": "Tickwise/1.0 (company news monitor)",
-      Accept: "application/rss+xml, application/xml, text/xml",
+      // Google News a veces devuelve 200 vacío a UAs "bot".
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      Accept: "application/rss+xml, application/xml, text/xml, */*",
     },
   });
   if (!response.ok) {
     throw new Error(`News search failed (${response.status})`);
   }
-  return parseRss(await response.text());
+  const xml = await response.text();
+  if (!/<item[\s>]/i.test(xml)) {
+    throw new Error("News search returned no RSS items");
+  }
+  return parseRss(xml);
 }
 
 function quoteTerm(value: string): string {
@@ -484,6 +490,21 @@ export async function searchCompanyNews(
   apiKey: string | undefined
 ): Promise<NewsHit[]> {
   if (!apiKey) return searchGoogleNews(company, windowMs);
+  try {
+    const hits = await searchPerplexityNews(company, windowMs, apiKey);
+    // Vacío tras el filtro no es error: igual caemos a Google.
+    if (hits.length > 0) return hits;
+  } catch {
+    // Si Perplexity falla, Google News sigue siendo usable.
+  }
+  return searchGoogleNews(company, windowMs);
+}
+
+async function searchPerplexityNews(
+  company: CompanyRef,
+  windowMs: number,
+  apiKey: string
+): Promise<NewsHit[]> {
   const query = perplexityNewsQuery(company);
 
   const response = await fetch("https://api.perplexity.ai/search", {
@@ -528,16 +549,43 @@ export async function searchCompanyNews(
   return filterHits(hits, windowMs, company).slice(0, 12);
 }
 
+// Perplexity a menudo manda solo la fecha (00:00:00Z). Esa marca no sirve
+// para recortar por hora: si no, después del mediodía UTC un lookback de 12h
+// tira todas las notas de "hoy".
+export function isDateOnlyUtc(iso: string): boolean {
+  const date = new Date(iso);
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0
+  );
+}
+
+export function publishedInWindow(
+  publishedAt: string,
+  windowMs: number,
+  now = Date.now()
+): boolean {
+  const published = new Date(publishedAt).getTime();
+  if (Number.isNaN(published)) return false;
+  const since = now - windowMs;
+  if (isDateOnlyUtc(publishedAt)) {
+    return published + 86_400_000 - 1 >= since;
+  }
+  return published >= since;
+}
+
 function filterHits(
   hits: NewsHit[],
   windowMs: number,
   company?: CompanyRef
 ): NewsHit[] {
-  const since = Date.now() - windowMs;
   const seen = new Set<string>();
   const kept: NewsHit[] = [];
   for (const hit of hits) {
-    if (new Date(hit.publishedAt).getTime() < since) continue;
+    if (!publishedInWindow(hit.publishedAt, windowMs)) continue;
     if (company && !mentionsCompany(`${hit.title} ${hit.summary}`, company)) continue;
     if (seen.has(hit.url)) continue;
     seen.add(hit.url);
@@ -589,8 +637,7 @@ export function screenReason(
   });
   if (domain) return `Blocked domain "${domain}"`;
 
-  const ageHours = (Date.now() - new Date(hit.publishedAt).getTime()) / 3_600_000;
-  if (ageHours > rules.windowHours) {
+  if (!publishedInWindow(hit.publishedAt, rules.windowHours * 3_600_000)) {
     return `Older than ${rules.windowHours}h lookback`;
   }
 

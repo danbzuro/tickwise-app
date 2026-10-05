@@ -1,4 +1,7 @@
-import { NavLink } from "react-router-dom";
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Newspaper, Rss, Settings, Users, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -14,6 +17,18 @@ interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+}
+
+function supabaseEnvLabel(): "Local" | "Prod" | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url || process.env.NODE_ENV === "production") return null;
+  try {
+    const host = new URL(url).hostname;
+    if (host === "127.0.0.1" || host === "localhost") return "Local";
+    return "Prod";
+  } catch {
+    return null;
+  }
 }
 
 const navItems: NavItem[] = [
@@ -38,6 +53,9 @@ export function Sidebar({
   mobileOpen,
   onClose,
 }: SidebarProps) {
+  const pathname = usePathname();
+  const envLabel = supabaseEnvLabel();
+
   return (
     <>
       {/* Overlay (sólo mobile cuando está abierto) */}
@@ -71,7 +89,9 @@ export function Sidebar({
             <span className="truncate text-sm font-semibold leading-none">
               {organization.name}
             </span>
-            <span className="text-xs text-muted-foreground">Market intel</span>
+            <span className="text-xs text-muted-foreground">
+              Market intel{envLabel ? ` · ${envLabel}` : ""}
+            </span>
           </div>
           {/* Cerrar (sólo mobile) */}
           <button
@@ -85,24 +105,28 @@ export function Sidebar({
 
         {/* Navegación */}
         <nav className="flex-1 space-y-1 p-3">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={onClose}
-              className={({ isActive }) =>
-                cn(
+          {navItems.map((item) => {
+            const isActive =
+              item.to === "/settings"
+                ? pathname.startsWith("/settings")
+                : pathname === item.to;
+            return (
+              <Link
+                key={item.to}
+                href={item.to}
+                onClick={onClose}
+                className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   isActive
                     ? "bg-accent text-accent-foreground"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                )
-              }
-            >
-              {item.icon}
-              {item.label}
-            </NavLink>
-          ))}
+                )}
+              >
+                {item.icon}
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Usuario (avatar) + sign out */}

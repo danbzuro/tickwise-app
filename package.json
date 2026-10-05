@@ -2,34 +2,34 @@
   "name": "tickwise-app",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "dotenv -e .env.local -- vite",
-    "prod": "dotenv -e .env -- vite",
-    "build": "tsc -b && vite build",
-    "build:prod": "dotenv -e .env -- sh -c 'tsc -b && vite build'",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "prod": "dotenv -e .env --override -- next dev",
+    "build": "next build",
+    "build:prod": "dotenv -e .env --override -- next build",
+    "start": "next start",
+    "functions": "supabase functions serve"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.117.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",
+    "next": "^15.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@types/node": "^22.18.8",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "dotenv-cli": "^11.0.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "typescript": "^5.6.3"
   }
 }

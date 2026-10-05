@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import {
   Newspaper,
   Sparkles,
@@ -114,13 +114,13 @@ export function LandingPage() {
 
           <div className="flex items-center gap-2">
             <Link
-              to="/login"
+              href="/login"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
             >
               Sign in
             </Link>
             <Link
-              to="/login"
+              href="/login"
               className={cn(buttonVariants({ size: "sm" }))}
             >
               Get started
@@ -157,7 +157,7 @@ export function LandingPage() {
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                to="/login"
+                href="/login"
                 className={cn(buttonVariants({ size: "lg" }), "gap-2")}
               >
                 Get started free
@@ -341,14 +341,14 @@ export function LandingPage() {
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
-                to="/login"
+                href="/login"
                 className={cn(buttonVariants({ size: "lg" }), "gap-2")}
               >
                 Get started free
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                to="/login"
+                href="/login"
                 className={cn(
                   buttonVariants({ variant: "outline", size: "lg" })
                 )}

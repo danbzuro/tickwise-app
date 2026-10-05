@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Clock, Plus, Trash2, Mail, X } from "lucide-react";
 import {

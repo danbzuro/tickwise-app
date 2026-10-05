@@ -13,6 +13,7 @@ import {
   googleNewsQuery,
   mentionsCompany,
   perplexityNewsQuery,
+  publishedInWindow,
 } from "./news.ts";
 
 const strategy = companyRef({
@@ -117,6 +118,27 @@ Deno.test("real Strategy headlines still match", () => {
   );
   assertEquals(
     mentionsCompany("Strategy for Monday Night Football", strategy),
+    false
+  );
+});
+
+Deno.test("date-only midnight UTC still counts as today inside a 12h window", () => {
+  const now = Date.parse("2026-10-05T12:45:00.000Z");
+  const twelveHours = 12 * 3_600_000;
+  assertEquals(
+    publishedInWindow("2026-10-05T00:00:00.000Z", twelveHours, now),
+    true
+  );
+  assertEquals(
+    publishedInWindow("2026-10-05T11:18:54.000Z", twelveHours, now),
+    true
+  );
+  assertEquals(
+    publishedInWindow("2026-10-04T23:00:00.000Z", twelveHours, now),
+    false
+  );
+  assertEquals(
+    publishedInWindow("2026-10-04T00:00:00.000Z", twelveHours, now),
     false
   );
 });

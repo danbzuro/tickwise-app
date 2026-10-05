@@ -1,3 +1,5 @@
+"use client";
+
 import { useEffect, useRef, useState } from "react";
 import { Building2, Upload, ImageIcon, X, Loader2, Check } from "lucide-react";
 import {

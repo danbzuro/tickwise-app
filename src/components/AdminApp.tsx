@@ -1,8 +1,10 @@
+"use client";
+
 import { useMemo } from "react";
 import { ShieldCheck, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { AdminOrganizationsPage } from "@/pages/AdminOrganizationsPage";
+import { AdminOrganizationsPage } from "@/screens/AdminOrganizationsPage";
 import { useAuth } from "@/context/AuthProvider";
 
 // -----------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Pencil, Plus, Rss, Trash2 } from "lucide-react";
 import {

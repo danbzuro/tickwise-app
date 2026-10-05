@@ -1,3 +1,5 @@
+"use client";
+
 import {
   createContext,
   useContext,
@@ -5,8 +7,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase/client";
 
 interface AuthContextValue {
   session: Session | null;
@@ -19,11 +22,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Sesión inicial + suscripción a cambios de auth
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
@@ -41,11 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
     });
+    if (!error) router.refresh();
     return { error: error?.message ?? null };
   }
 
   async function signOut() {
     await supabase.auth.signOut();
+    router.replace("/");
+    router.refresh();
   }
 
   return (
@@ -57,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Hook de acceso al contexto de auth
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth debe usarse dentro de <AuthProvider>");

@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Users, UserPlus, MoreHorizontal, Send, X, Ban } from "lucide-react";
 import {

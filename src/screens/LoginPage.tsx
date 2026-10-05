@@ -1,9 +1,13 @@
+"use client";
+
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Newspaper, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/context/AuthProvider";
+import * as api from "@/lib/api";
 
 // Cuentas de demo del seeder (sólo para desarrollo local)
 const DEMO_ACCOUNTS = [
@@ -13,6 +17,7 @@ const DEMO_ACCOUNTS = [
 
 export function LoginPage() {
   const { signIn } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -26,8 +31,10 @@ export function LoginPage() {
     if (error) {
       setError(error);
       setLoading(false);
+      return;
     }
-    // En éxito, el AuthProvider actualiza la sesión y re-renderiza la app
+    const admin = await api.isPlatformAdmin();
+    router.replace(admin ? "/admin" : "/feed");
   }
 
   // Prefill rápido de una cuenta de demo

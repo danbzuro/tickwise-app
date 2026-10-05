@@ -3,7 +3,9 @@ node_modules
 
 # Build
 dist
-dist-ssr
+.next
+out
+tsconfig.tsbuildinfo
 
 # Logs
 *.log
@@ -12,6 +14,8 @@ npm-debug.log*
 # Entorno (secretos locales)
 .env
 .env.local
+.env.development
+.env.production
 .env.*.local
 
 # Supabase

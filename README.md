@@ -14,23 +14,23 @@ Workspaces are shared: invite analysts and keep the whole team reading from the 
 
 ## Stack
 
-- React 18, TypeScript, Vite
+- Next.js (App Router), React 18, TypeScript
 - Tailwind CSS
-- React Router
-- Supabase (auth and data)
+- Supabase (auth, data, scrape Edge Function)
 
 ## Local development
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env.development
 ```
 
-Fill `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local` (local Supabase or a hosted project).
+Fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.development` (local) or `.env` (production). Scrape API keys stay in Supabase (`supabase secrets set` / `npm run functions`), not in these files.
 
 ```bash
-npm run dev      # local env (.env.local)
-npm run prod     # production env (.env)
-npm run build    # typecheck + production build
-npm run preview  # serve the production build
+npm run dev        # local env (.env.development)
+npm run prod       # production env (.env)
+npm run functions  # sirve el scrape en local
+npm run build      # production build
+npm run start      # serve the production build
 ```

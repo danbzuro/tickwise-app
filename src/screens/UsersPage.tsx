@@ -1,3 +1,5 @@
+"use client";
+
 import { MembersCard } from "@/components/MembersCard";
 import type { Member, MemberRole } from "@/data/mock";
 

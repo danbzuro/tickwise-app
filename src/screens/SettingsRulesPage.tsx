@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { Plus, Save, X, Filter, Bot, Globe, History } from "lucide-react";
 import {

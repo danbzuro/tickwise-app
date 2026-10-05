@@ -1,23 +1,23 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
-import { FeedPage } from "@/pages/FeedPage";
-import { SourcesPage } from "@/pages/SourcesPage";
-import { SettingsGeneralPage } from "@/pages/SettingsGeneralPage";
-import { SettingsRulesPage } from "@/pages/SettingsRulesPage";
-import { UsersPage } from "@/pages/UsersPage";
-import { LoginPage } from "@/pages/LoginPage";
-import { LandingPage } from "@/pages/LandingPage";
-import { AdminApp } from "@/components/AdminApp";
+import { FullScreenLoader } from "@/components/FullScreenLoader";
 import { useAuth } from "@/context/AuthProvider";
 import { useToast } from "@/components/ui/toast";
 import * as api from "@/lib/api";
 import type { OrgData } from "@/lib/api";
 import type { Materiality, MemberRole } from "@/data/mock";
 
-// Formatea un string HH:mm a formato 12h (e.g. "08:00 AM")
 function formatTime12(time: string) {
   const [h, m] = time.split(":").map(Number);
   const period = h >= 12 ? "PM" : "AM";
@@ -25,72 +25,62 @@ function formatTime12(time: string) {
   return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-// Pantalla de carga a página completa
-function FullScreenLoader() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-    </div>
-  );
+export interface WorkspaceContextValue {
+  orgId: string;
+  data: OrgData;
+  isRunning: boolean;
+  runError: string | null;
+  nextRun: string | null;
+  handleRunCron: () => Promise<void>;
+  saveSourceH: (
+    id: string | null,
+    input: { name: string; tick: string | null; url: string }
+  ) => Promise<void>;
+  deleteSourceH: (id: string) => Promise<void>;
+  addScheduleH: () => Promise<void>;
+  removeScheduleH: (id: string) => Promise<void>;
+  changeScheduleTimeH: (id: string, time: string) => Promise<void>;
+  toggleScheduleH: (id: string) => Promise<void>;
+  addRecipientH: (email: string) => Promise<void>;
+  removeRecipientH: (email: string) => Promise<void>;
+  addExcludeTermH: (term: string) => void;
+  removeExcludeTermH: (term: string) => void;
+  addExcludeDomainH: (domain: string) => void;
+  removeExcludeDomainH: (domain: string) => void;
+  setMinMaterialityH: (level: Materiality) => Promise<void>;
+  setMaxLookbackH: (hours: number | null) => Promise<void>;
+  saveRulesH: () => Promise<void>;
+  setGuidelineH: (level: Materiality, text: string) => void;
+  setOrgNameH: (name: string) => void;
+  setOrgLogoH: (file: File | null) => Promise<void>;
+  inviteMemberH: (email: string, role: MemberRole) => Promise<void>;
+  removeMemberH: (id: string) => Promise<void>;
+  dismissFeedH: (ids: string[]) => Promise<void>;
+  markFeedH: (ids: string[], read: boolean) => Promise<void>;
+  resendInviteH: (id: string) => void;
 }
 
-export default function App() {
-  const { session, loading, signOut } = useAuth();
+const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
+  undefined
+);
 
-  // Resuelve si el usuario logueado es super admin de plataforma para decidir
-  // entre el panel de super admin (CRUD de orgs) y el workspace de una org.
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!session) {
-      setIsAdmin(null);
-      return;
-    }
-    void (async () => {
-      const admin = await api.isPlatformAdmin();
-      if (active) setIsAdmin(admin);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [session]);
-
-  if (loading) return <FullScreenLoader />;
-  // Sin sesión: landing pública en "/" y login en "/login"
-  if (!session) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="*" element={<LandingPage />} />
-      </Routes>
-    );
-  }
-  // Esperamos a saber el rol antes de montar un árbol u otro
-  if (isAdmin === null) return <FullScreenLoader />;
-
-  return isAdmin ? (
-    <AdminApp signOut={signOut} />
-  ) : (
-    <Workspace signOut={signOut} />
-  );
+export function useWorkspace() {
+  const ctx = useContext(WorkspaceContext);
+  if (!ctx) throw new Error("useWorkspace debe usarse dentro de WorkspaceProvider");
+  return ctx;
 }
 
-// -----------------------------------------------------------------------------
-// Workspace: sólo se monta con sesión activa. Resuelve la org y carga sus datos.
-// -----------------------------------------------------------------------------
-function Workspace({ signOut }: { signOut: () => Promise<void> }) {
+export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const notify = useToast();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [data, setData] = useState<OrgData | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
 
-  // Corre una mutación y avisa el resultado. Relanza el error para el modal.
   const report = useCallback(
     async (success: string, action: () => Promise<void>) => {
       try {
@@ -107,7 +97,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     [notify]
   );
 
-  // Info del usuario para el sidebar (desde la sesión de auth)
   const userInfo = useMemo(() => {
     const name = (user?.user_metadata?.name as string) || user?.email || "User";
     const email = user?.email ?? "";
@@ -119,7 +108,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     return { name, email, initials };
   }, [user]);
 
-  // Carga inicial: resolver org + traer datos
   useEffect(() => {
     let active = true;
     (async () => {
@@ -144,7 +132,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     };
   }, []);
 
-  // Próxima corrida = primer slot activo
   const nextRun = useMemo(() => {
     if (!data) return null;
     const enabled = data.schedules
@@ -153,23 +140,24 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     return enabled.length ? formatTime12(enabled[0].time) : null;
   }, [data]);
 
-  // --- Handlers (actualizan la DB y luego el estado local) ---
-
-  const [runError, setRunError] = useState<string | null>(null);
-
   const handleRunCron = useCallback(async () => {
     if (!orgId) return;
     setIsRunning(true);
     setRunError(null);
     try {
-      const bundle = await api.runCron(orgId);
-      setData(bundle);
+      const { org, summary } = await api.runCron(orgId);
+      setData(org);
+      notify(
+        summary.itemsKept > 0
+          ? `Found ${summary.itemsFound}, kept ${summary.itemsKept}`
+          : `Run finished. No new stories (${summary.itemsFound} found, ${summary.windowHours}h window).`
+      );
     } catch (e) {
       setRunError((e as Error).message);
     } finally {
       setIsRunning(false);
     }
-  }, [orgId]);
+  }, [orgId, notify]);
 
   const saveSourceH = useCallback(
     async (
@@ -305,7 +293,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     [orgId, report]
   );
 
-  // Helper para persistir noise_rules con un patch y actualizar estado
   const patchNoise = useCallback(
     async (patch: Partial<OrgData["noiseRules"]>, success?: string) => {
       if (!orgId) return;
@@ -330,9 +317,7 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     (term: string) => {
       if (data?.noiseRules.excludeTerms.includes(term)) return;
       void patchNoise(
-        {
-          excludeTerms: [...(data?.noiseRules.excludeTerms ?? []), term],
-        },
+        { excludeTerms: [...(data?.noiseRules.excludeTerms ?? []), term] },
         "Blocked term added"
       );
     },
@@ -403,7 +388,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     );
   }, [orgId, data]);
 
-  // Rúbrica: update local inmediato + persistencia (fire-and-forget)
   const setGuidelineH = useCallback(
     (level: Materiality, text: string) => {
       setData((d) =>
@@ -414,7 +398,6 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     [orgId]
   );
 
-  // Organización: update local inmediato + persistencia
   const setOrgNameH = useCallback(
     (name: string) => {
       setData((d) =>
@@ -479,7 +462,10 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
           const gone = new Set(ids);
           setData((d) =>
             d
-              ? { ...d, feedItems: d.feedItems.filter((item) => !gone.has(item.id)) }
+              ? {
+                  ...d,
+                  feedItems: d.feedItems.filter((item) => !gone.has(item.id)),
+                }
               : d
           );
         }
@@ -513,11 +499,9 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     // Mock: en un backend real re-dispararía el email de invitación
   }, []);
 
-  // --- Render ---
-
   if (dataLoading) return <FullScreenLoader />;
 
-  if (loadError || !data) {
+  if (loadError || !data || !orgId) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
         <p className="text-sm text-muted-foreground">
@@ -533,110 +517,69 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     );
   }
 
-  return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar
-        organization={data.organization}
-        user={userInfo}
-        onSignOut={signOut}
-        mobileOpen={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-      />
+  const value: WorkspaceContextValue = {
+    orgId,
+    data,
+    isRunning,
+    runError,
+    nextRun,
+    handleRunCron,
+    saveSourceH,
+    deleteSourceH,
+    addScheduleH,
+    removeScheduleH,
+    changeScheduleTimeH,
+    toggleScheduleH,
+    addRecipientH,
+    removeRecipientH,
+    addExcludeTermH,
+    removeExcludeTermH,
+    addExcludeDomainH,
+    removeExcludeDomainH,
+    setMinMaterialityH,
+    setMaxLookbackH,
+    saveRulesH,
+    setGuidelineH,
+    setOrgNameH,
+    setOrgLogoH,
+    inviteMemberH,
+    removeMemberH,
+    dismissFeedH,
+    markFeedH,
+    resendInviteH,
+  };
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          lastScrape={data.lastScrape}
-          nextRun={nextRun}
-          isRunning={isRunning}
-          onRunCron={handleRunCron}
-          onMenuClick={() => setMobileOpen(true)}
+  return (
+    <WorkspaceContext.Provider value={value}>
+      <div className="flex min-h-screen bg-background">
+        <Sidebar
+          organization={data.organization}
+          user={userInfo}
+          onSignOut={signOut}
+          mobileOpen={mobileOpen}
+          onClose={() => setMobileOpen(false)}
         />
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
-            {runError && (
-              <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                {runError}
-              </p>
-            )}
-            <Routes>
-              <Route path="/" element={<Navigate to="/feed" replace />} />
-              <Route
-                path="/feed"
-                element={
-                  <FeedPage
-                    items={data.feedItems}
-                    noiseRules={data.noiseRules}
-                    onMarkRead={markFeedH}
-                    onDismiss={dismissFeedH}
-                  />
-                }
-              />
-              <Route
-                path="/sources"
-                element={
-                  <SourcesPage
-                    sources={data.sources}
-                    onSaveSource={saveSourceH}
-                    onDeleteSource={deleteSourceH}
-                  />
-                }
-              />
-              <Route
-                path="/users"
-                element={
-                  <UsersPage
-                    members={data.members}
-                    onInviteMember={inviteMemberH}
-                    onResendInvite={resendInviteH}
-                    onCancelInvite={removeMemberH}
-                    onRevokeMember={removeMemberH}
-                  />
-                }
-              />
-              <Route
-                path="/settings"
-                element={<Navigate to="/settings/general" replace />}
-              />
-              <Route
-                path="/settings/general"
-                element={
-                  <SettingsGeneralPage
-                    organization={data.organization}
-                    schedules={data.schedules}
-                    recipients={data.recipients}
-                    onChangeOrgName={setOrgNameH}
-                    onChangeOrgLogo={setOrgLogoH}
-                    onAdd={addScheduleH}
-                    onRemove={removeScheduleH}
-                    onChangeTime={changeScheduleTimeH}
-                    onToggle={toggleScheduleH}
-                    onAddRecipient={addRecipientH}
-                    onRemoveRecipient={removeRecipientH}
-                  />
-                }
-              />
-              <Route
-                path="/settings/rules"
-                element={
-                  <SettingsRulesPage
-                    noiseRules={data.noiseRules}
-                    guidelines={data.guidelines}
-                    onAddExcludeTerm={addExcludeTermH}
-                    onRemoveExcludeTerm={removeExcludeTermH}
-                    onAddExcludeDomain={addExcludeDomainH}
-                    onRemoveExcludeDomain={removeExcludeDomainH}
-                    onChangeMinMateriality={setMinMaterialityH}
-                    onChangeMaxLookback={setMaxLookbackH}
-                    onChangeGuideline={setGuidelineH}
-                    onSave={saveRulesH}
-                  />
-                }
-              />
-              <Route path="*" element={<Navigate to="/feed" replace />} />
-            </Routes>
-          </div>
-        </main>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar
+            lastScrape={data.lastScrape}
+            nextRun={nextRun}
+            isRunning={isRunning}
+            onRunCron={handleRunCron}
+            onMenuClick={() => setMobileOpen(true)}
+          />
+          <main className="flex-1 overflow-auto">
+            <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
+              {runError && (
+                <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  {runError}
+                </p>
+              )}
+              {children}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </WorkspaceContext.Provider>
   );
 }
