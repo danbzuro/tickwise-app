@@ -38,11 +38,14 @@ export function triage(items: FeedItem[], rules: NoiseRules): TriageResult {
       (t) => t.trim() && haystack.includes(t.trim().toLowerCase())
     );
 
-    const host = hostOf(item.url);
+    const hosts = [item.url, item.outletUrl ?? ""].map(hostOf);
     const domain = rules.excludeDomains.find((d) => {
       const needle = d.trim().replace(/^www\./, "").toLowerCase();
-      // coincide el dominio exacto o cualquier subdominio
-      return needle && (host === needle || host.endsWith(`.${needle}`));
+      // coincide el dominio exacto o cualquier subdominio (nota o medio)
+      return (
+        needle &&
+        hosts.some((host) => host === needle || host.endsWith(`.${needle}`))
+      );
     });
 
     // Antigüedad del item en horas (relativa a ahora)

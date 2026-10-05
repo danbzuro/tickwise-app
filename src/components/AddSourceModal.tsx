@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,44 +10,71 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { Source } from "@/data/mock";
+
+export interface SourceInput {
+  name: string;
+  tick: string | null;
+  url: string;
+}
 
 interface AddSourceModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onAdd: (input: { name: string; tick: string; url: string }) => void;
+  source?: Source | null;
+  onSubmit: (input: SourceInput) => Promise<void> | void;
 }
 
-// Modal para agregar una nueva fuente al scraper
+// Modal para crear o editar una fuente
 export function AddSourceModal({
   open,
   onOpenChange,
-  onAdd,
+  source,
+  onSubmit,
 }: AddSourceModalProps) {
   const [name, setName] = useState("");
   const [tick, setTick] = useState("");
   const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const editing = Boolean(source);
 
-  function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (!open) return;
+    setName(source?.name ?? "");
+    setTick(source?.tick ?? "");
+    setUrl(source?.url ?? "");
+    setError(null);
+    setSaving(false);
+  }, [open, source]);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim() || !tick.trim() || !url.trim()) return;
-    onAdd({
-      name: name.trim(),
-      tick: tick.trim().toUpperCase(),
-      url: url.trim(),
-    });
-    onOpenChange(false);
-    setName("");
-    setTick("");
-    setUrl("");
+    if (!name.trim() || !url.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        tick: tick.trim() ? tick.trim().toUpperCase() : null,
+        url: url.trim(),
+      });
+      onOpenChange(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent onClose={() => onOpenChange(false)}>
         <DialogHeader>
-          <DialogTitle>Add source</DialogTitle>
+          <DialogTitle>{editing ? "Edit source" : "Add source"}</DialogTitle>
           <DialogDescription>
-            Register a new origin for the scraper to crawl on each cron run.
+            The URL identifies the company. Each run searches recent news about
+            it and applies your noise rules. A ticker is optional context.
           </DialogDescription>
         </DialogHeader>
 
@@ -62,7 +89,7 @@ export function AddSourceModal({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="tick">Tick</Label>
+            <Label htmlFor="tick">Tick (optional)</Label>
             <Input
               id="tick"
               placeholder="e.g. AAPL"
@@ -82,15 +109,22 @@ export function AddSourceModal({
             />
           </div>
 
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+
           <DialogFooter className="mt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
+              disabled={saving}
             >
               Cancel
             </Button>
-            <Button type="submit">Add source</Button>
+            <Button type="submit" disabled={saving}>
+              {editing ? "Save" : "Add source"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -125,13 +125,14 @@ export type Database = {
           id: string
           materiality: Database["public"]["Enums"]["materiality"]
           org_id: string
+          outlet_url: string | null
           published_at: string
           run_id: string | null
           screened: boolean
           screened_reason: string | null
           source_id: string | null
           summary: string | null
-          tick: string
+          tick: string | null
           title: string
           url: string
           why_it_matters: string | null
@@ -143,13 +144,14 @@ export type Database = {
           id?: string
           materiality: Database["public"]["Enums"]["materiality"]
           org_id: string
+          outlet_url?: string | null
           published_at: string
           run_id?: string | null
           screened?: boolean
           screened_reason?: string | null
           source_id?: string | null
           summary?: string | null
-          tick: string
+          tick?: string | null
           title: string
           url: string
           why_it_matters?: string | null
@@ -161,13 +163,14 @@ export type Database = {
           id?: string
           materiality?: Database["public"]["Enums"]["materiality"]
           org_id?: string
+          outlet_url?: string | null
           published_at?: string
           run_id?: string | null
           screened?: boolean
           screened_reason?: string | null
           source_id?: string | null
           summary?: string | null
-          tick?: string
+          tick?: string | null
           title?: string
           url?: string
           why_it_matters?: string | null
@@ -396,7 +399,7 @@ export type Database = {
           id: string
           name: string
           org_id: string
-          tick: string
+          tick: string | null
           updated_at: string
           url: string
         }
@@ -405,7 +408,7 @@ export type Database = {
           id?: string
           name: string
           org_id: string
-          tick: string
+          tick?: string | null
           updated_at?: string
           url: string
         }
@@ -414,7 +417,7 @@ export type Database = {
           id?: string
           name?: string
           org_id?: string
-          tick?: string
+          tick?: string | null
           updated_at?: string
           url?: string
         }

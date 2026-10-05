@@ -1,12 +1,23 @@
 import { useState } from "react";
-import { ExternalLink, Plus, Rss } from "lucide-react";
+import { ExternalLink, Pencil, Plus, Rss, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { AddSourceModal } from "@/components/AddSourceModal";
+import {
+  AddSourceModal,
+  type SourceInput,
+} from "@/components/AddSourceModal";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -21,11 +32,44 @@ import type { Source } from "@/data/mock";
 
 interface SourcesPageProps {
   sources: Source[];
-  onAddSource: (input: { name: string; tick: string; url: string }) => void;
+  onSaveSource: (id: string | null, input: SourceInput) => Promise<void>;
+  onDeleteSource: (id: string) => Promise<void>;
 }
 
-export function SourcesPage({ sources, onAddSource }: SourcesPageProps) {
+export function SourcesPage({
+  sources,
+  onSaveSource,
+  onDeleteSource,
+}: SourcesPageProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Source | null>(null);
+  const [deleting, setDeleting] = useState<Source | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+
+  function openAdd() {
+    setEditing(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(source: Source) {
+    setEditing(source);
+    setModalOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeletingBusy(true);
+    setDeleteError(null);
+    try {
+      await onDeleteSource(deleting.id);
+      setDeleting(null);
+    } catch (err) {
+      setDeleteError((err as Error).message);
+    } finally {
+      setDeletingBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -34,10 +78,10 @@ export function SourcesPage({ sources, onAddSource }: SourcesPageProps) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Sources</h1>
           <p className="text-sm text-muted-foreground">
-            Origins the cron scrapes on every run · {sources.length} sources
+            Company references for each run · {sources.length} sources
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)}>
+        <Button onClick={openAdd}>
           <Plus className="h-4 w-4" />
           Add source
         </Button>
@@ -68,22 +112,50 @@ export function SourcesPage({ sources, onAddSource }: SourcesPageProps) {
                     {source.name}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="font-mono">
-                      {source.tick}
-                    </Badge>
+                    {source.tick ? (
+                      <Badge variant="outline" className="font-mono">
+                        {source.tick}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">
                     {source.url}
                   </TableCell>
                   <TableCell className="pr-6 text-right">
-                    <a
-                      href={source.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                    <div className="flex items-center justify-end gap-1">
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        aria-label={`Open ${source.name}`}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => openEdit(source)}
+                        aria-label={`Edit ${source.name}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setDeleting(source);
+                        }}
+                        aria-label={`Delete ${source.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -95,8 +167,48 @@ export function SourcesPage({ sources, onAddSource }: SourcesPageProps) {
       <AddSourceModal
         open={modalOpen}
         onOpenChange={setModalOpen}
-        onAdd={onAddSource}
+        source={editing}
+        onSubmit={(input) => onSaveSource(editing?.id ?? null, input)}
       />
+
+      <Dialog
+        open={deleting != null}
+        onOpenChange={(open) => {
+          if (!open && !deletingBusy) setDeleting(null);
+        }}
+      >
+        <DialogContent onClose={() => !deletingBusy && setDeleting(null)}>
+          <DialogHeader>
+            <DialogTitle>Delete source</DialogTitle>
+            <DialogDescription>
+              {deleting
+                ? `${deleting.name} will stop being searched on the next run. News already in the feed stays.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <p className="text-sm text-destructive">{deleteError}</p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleting(null)}
+              disabled={deletingBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deletingBusy}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

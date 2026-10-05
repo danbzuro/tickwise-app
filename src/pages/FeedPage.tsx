@@ -298,15 +298,17 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
               {/* Contenido expandido: "¿y qué?" + detalle */}
               {isOpen && (
                 <CardContent className="space-y-3 pt-0">
-                  <div className="rounded-md border bg-muted/40 p-3">
-                    <div className="mb-1 flex items-center gap-1.5 text-xs font-medium">
-                      <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
-                      Why it matters
+                  {item.whyItMatters && (
+                    <div className="rounded-md border bg-muted/40 p-3">
+                      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium">
+                        <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+                        Why it matters
+                      </div>
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        {item.whyItMatters}
+                      </p>
                     </div>
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {item.whyItMatters}
-                    </p>
-                  </div>
+                  )}
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     {item.content}
                   </p>

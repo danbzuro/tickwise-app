@@ -136,22 +136,52 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
 
   // --- Handlers (actualizan la DB y luego el estado local) ---
 
+  const [runError, setRunError] = useState<string | null>(null);
+
   const handleRunCron = useCallback(async () => {
     if (!orgId) return;
     setIsRunning(true);
-    const label = await api.runCron(orgId);
-    setData((d) => (d ? { ...d, lastScrape: label } : d));
-    setIsRunning(false);
+    setRunError(null);
+    try {
+      const bundle = await api.runCron(orgId);
+      setData(bundle);
+    } catch (e) {
+      setRunError((e as Error).message);
+    } finally {
+      setIsRunning(false);
+    }
   }, [orgId]);
 
-  const addSourceH = useCallback(
-    async (input: { name: string; tick: string; url: string }) => {
+  const saveSourceH = useCallback(
+    async (
+      id: string | null,
+      input: { name: string; tick: string | null; url: string }
+    ) => {
       if (!orgId) return;
-      const s = await api.addSource(orgId, input);
-      setData((d) => (d ? { ...d, sources: [...d.sources, s] } : d));
+      if (id) {
+        const updated = await api.updateSource(id, input);
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                sources: d.sources.map((s) => (s.id === id ? updated : s)),
+              }
+            : d
+        );
+        return;
+      }
+      const created = await api.addSource(orgId, input);
+      setData((d) => (d ? { ...d, sources: [...d.sources, created] } : d));
     },
     [orgId]
   );
+
+  const deleteSourceH = useCallback(async (id: string) => {
+    await api.removeSource(id);
+    setData((d) =>
+      d ? { ...d, sources: d.sources.filter((s) => s.id !== id) } : d
+    );
+  }, []);
 
   const addScheduleH = useCallback(async () => {
     if (!orgId) return;
@@ -382,6 +412,11 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
         />
         <main className="flex-1 overflow-auto">
           <div className="mx-auto max-w-5xl px-4 py-8 sm:px-8">
+            {runError && (
+              <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {runError}
+              </p>
+            )}
             <Routes>
               <Route path="/" element={<Navigate to="/feed" replace />} />
               <Route
@@ -393,7 +428,11 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
               <Route
                 path="/sources"
                 element={
-                  <SourcesPage sources={data.sources} onAddSource={addSourceH} />
+                  <SourcesPage
+                    sources={data.sources}
+                    onSaveSource={saveSourceH}
+                    onDeleteSource={deleteSourceH}
+                  />
                 }
               />
               <Route

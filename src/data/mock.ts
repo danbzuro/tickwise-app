@@ -3,7 +3,7 @@
 export interface Source {
   id: string;
   name: string;
-  tick: string;
+  tick: string | null;
   url: string;
 }
 
@@ -19,6 +19,7 @@ export interface FeedItem {
   tick: string;
   source: string;
   url: string;
+  outletUrl?: string;
   publishedAt: string; // ISO
   category: "Earnings" | "Product" | "M&A" | "Regulation" | "Market";
   materiality: Materiality;

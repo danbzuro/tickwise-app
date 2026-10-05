@@ -161,6 +161,10 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
     });
   }
 
+  const sourceNameById = new Map(
+    (sourcesRes.data ?? []).map((s) => [s.id, s.name])
+  );
+
   return {
     organization: { name: org.name, logoUrl: org.logo_url },
     sources: (sourcesRes.data ?? []).map((s) => ({
@@ -169,19 +173,23 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
       tick: s.tick,
       url: s.url,
     })),
-    feedItems: (feedRes.data ?? []).map((f) => ({
-      id: f.id,
-      title: f.title,
-      summary: f.summary ?? "",
-      content: f.content ?? "",
-      whyItMatters: f.why_it_matters ?? "",
-      tick: f.tick,
-      source: "",
-      url: f.url,
-      publishedAt: f.published_at,
-      category: f.category,
-      materiality: f.materiality,
-    })),
+    feedItems: (feedRes.data ?? []).map((f) => {
+      const company = (f.source_id && sourceNameById.get(f.source_id)) || "";
+      return {
+        id: f.id,
+        title: f.title,
+        summary: f.summary ?? "",
+        content: f.content ?? "",
+        whyItMatters: f.why_it_matters ?? "",
+        tick: f.tick || company || "—",
+        source: company,
+        url: f.url,
+        outletUrl: f.outlet_url ?? undefined,
+        publishedAt: f.published_at,
+        category: f.category,
+        materiality: f.materiality,
+      };
+    }),
     schedules: (schedulesRes.data ?? []).map((s) => ({
       id: s.id,
       time: toHHmm(s.run_time),
@@ -306,15 +314,43 @@ export async function deleteOrganization(id: string): Promise<void> {
 
 export async function addSource(
   orgId: string,
-  input: { name: string; tick: string; url: string }
+  input: { name: string; tick: string | null; url: string }
 ): Promise<Source> {
   const { data, error } = await supabase
     .from("sources")
-    .insert({ org_id: orgId, ...input })
+    .insert({
+      org_id: orgId,
+      name: input.name,
+      url: input.url,
+      tick: input.tick,
+    })
     .select()
     .single();
   if (error) throw error;
   return { id: data.id, name: data.name, tick: data.tick, url: data.url };
+}
+
+export async function updateSource(
+  id: string,
+  input: { name: string; tick: string | null; url: string }
+): Promise<Source> {
+  const { data, error } = await supabase
+    .from("sources")
+    .update({
+      name: input.name,
+      tick: input.tick,
+      url: input.url,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, name: data.name, tick: data.tick, url: data.url };
+}
+
+export async function removeSource(id: string): Promise<void> {
+  const { error } = await supabase.from("sources").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function addSchedule(orgId: string): Promise<CronSchedule> {
@@ -446,18 +482,27 @@ export async function removeMember(id: string): Promise<void> {
   if (error) throw error;
 }
 
-// Dispara una corrida (mock): registra un cron_run y devuelve el label de "last scrape"
-export async function runCron(orgId: string): Promise<string> {
-  const now = new Date();
-  await supabase.from("cron_runs").insert({
-    org_id: orgId,
-    status: "success",
-    finished_at: now.toISOString(),
+// Dispara el scrape real y recarga la org para reflejar el feed nuevo.
+export async function runCron(orgId: string): Promise<OrgData> {
+  const { data, error } = await supabase.functions.invoke("scrape", {
+    body: { orgId },
   });
-  return now.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (error) throw new Error(await messageFromInvokeError(error));
+  if (data && typeof data === "object" && "error" in data && data.error) {
+    throw new Error(String(data.error));
+  }
+  return loadOrgData(orgId);
+}
+
+async function messageFromInvokeError(error: unknown): Promise<string> {
+  const context = (error as { context?: Response }).context;
+  if (context && typeof context.json === "function") {
+    try {
+      const body = await context.json();
+      if (body?.error) return String(body.error);
+    } catch {
+      // El body no era JSON.
+    }
+  }
+  return error instanceof Error ? error.message : "Scrape failed";
 }
