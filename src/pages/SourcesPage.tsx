@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, Pencil, Plus, Rss, Trash2 } from "lucide-react";
+import { Pencil, Plus, Rss, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -120,20 +120,18 @@ export function SourcesPage({
                       <span className="text-sm text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {source.url}
+                  <TableCell className="max-w-xs truncate">
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                    >
+                      {source.url}
+                    </a>
                   </TableCell>
                   <TableCell className="pr-6 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <a
-                        href={source.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                        aria-label={`Open ${source.name}`}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
                       <Button
                         variant="ghost"
                         size="icon"

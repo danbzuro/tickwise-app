@@ -108,14 +108,8 @@ async function scrape(req: Request) {
 
   if (!rules) throw new HttpError(500, "Noise rules are missing");
 
-  const perplexityKey = Deno.env.get("PERPLEXITY_API_KEY");
-  const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!perplexityKey || !openaiKey) {
-    throw new HttpError(
-      500,
-      "Set PERPLEXITY_API_KEY and OPENAI_API_KEY on the scrape function"
-    );
-  }
+  const perplexityKey = Deno.env.get("PERPLEXITY_API_KEY") || undefined;
+  const openaiKey = Deno.env.get("OPENAI_API_KEY") || undefined;
 
   const hours = windowHours(rules.max_lookback_hours, lastRun?.finished_at ?? null);
   const noise = {
@@ -206,7 +200,7 @@ interface Collected {
 async function collect(
   sources: { id: string; name: string; tick: string | null; url: string }[],
   hours: number,
-  apiKey: string
+  apiKey: string | undefined
 ): Promise<Collected[]> {
   const windowMs = hours * 3_600_000;
   const failures: string[] = [];
@@ -247,9 +241,9 @@ async function collect(
 async function scoreWithModel(
   items: Collected[],
   guides: { level: string; content: string }[],
-  apiKey: string
+  apiKey: string | undefined
 ): Promise<Collected[]> {
-  if (items.length === 0) return items;
+  if (!apiKey || items.length === 0) return items;
 
   const scored: Collected[] = [];
   for (let index = 0; index < items.length; index += 12) {

@@ -1,5 +1,5 @@
 // La URL de la fuente no se crawlea: identifica a la empresa.
-// Perplexity busca la cobertura reciente. El modelo clasifica después.
+// Con PERPLEXITY_API_KEY busca ahí. Si no está, cae a Google News.
 
 export type Materiality = "material" | "potentially" | "noteworthy";
 export type FeedCategory = "Earnings" | "Product" | "M&A" | "Regulation" | "Market";
@@ -96,6 +96,155 @@ function hostOf(url: string): string {
   }
 }
 
+function decodeXml(value: string): string {
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) =>
+      String.fromCodePoint(parseInt(n, 16))
+    )
+    .trim();
+}
+
+function tag(block: string, name: string): string {
+  const match = block.match(
+    new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i")
+  );
+  return match ? decodeXml(match[1]) : "";
+}
+
+function attr(block: string, tagName: string, attribute: string): string {
+  const match = block.match(
+    new RegExp(`<${tagName}\\b[^>]*\\b${attribute}="([^"]+)"`, "i")
+  );
+  return match ? decodeXml(match[1]) : "";
+}
+
+function stripTags(value: string): string {
+  return decodeXml(value)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function articleUrl(link: string): string {
+  try {
+    const parsed = new URL(link);
+    const inner = parsed.searchParams.get("url");
+    if (inner && /^https?:\/\//i.test(inner)) return inner;
+  } catch {
+    // El link no es una URL absoluta.
+  }
+  return link;
+}
+
+// Nombres de una sola palabra que también son palabras comunes.
+const AMBIGUOUS = new Set([
+  "apple",
+  "meta",
+  "amazon",
+  "shell",
+  "target",
+  "visa",
+  "block",
+  "snap",
+]);
+const COMPANY_CUE =
+  /\b(inc|corp|shares|stock|nasdaq|nyse|earnings|ceo|cfo|guidance|revenue|profit|announces|unveils|launches|launch|acquire|merger|lawsuit|recall|iphone|macbook)\b/i;
+
+function mentionsCompany(text: string, company: CompanyRef): boolean {
+  const haystack = text.toLowerCase();
+  if (
+    company.tick &&
+    new RegExp(`\\b${company.tick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text)
+  ) {
+    return true;
+  }
+  const tokens = company.name
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length > 2);
+  if (tokens.length === 0) return true;
+  if (!tokens.every((token) => haystack.includes(token))) return false;
+  if (tokens.length >= 2) return true;
+  if (!AMBIGUOUS.has(tokens[0])) return true;
+  return (
+    COMPANY_CUE.test(text) ||
+    (company.domain !== "" && haystack.includes(company.domain))
+  );
+}
+
+function parseRss(xml: string): NewsHit[] {
+  const hits: NewsHit[] = [];
+  const blocks = xml.split(/<item[\s>]/i).slice(1);
+  for (const block of blocks) {
+    const chunk = block.split(/<\/item>/i)[0] ?? "";
+    const title = stripTags(tag(chunk, "title"));
+    const link = tag(chunk, "link") || tag(chunk, "guid");
+    const summary = stripTags(tag(chunk, "description")).slice(0, 1000);
+    const published = Date.parse(tag(chunk, "pubDate"));
+    if (!title || !link || Number.isNaN(published)) continue;
+    const url = articleUrl(link);
+    if (!/^https?:\/\//i.test(url)) continue;
+    const outlet = attr(chunk, "source", "url");
+    hits.push({
+      title: title.slice(0, 500),
+      url,
+      outletUrl: /^https?:\/\//i.test(outlet) ? outlet : "",
+      summary,
+      publishedAt: new Date(published).toISOString(),
+    });
+  }
+  return hits;
+}
+
+function googleWhen(hours: number): string {
+  if (hours <= 1) return "1h";
+  if (hours <= 12) return "12h";
+  if (hours <= 24) return "1d";
+  if (hours <= 48) return "2d";
+  return `${Math.min(7, Math.ceil(hours / 24))}d`;
+}
+
+async function fetchGoogleNews(query: string): Promise<NewsHit[]> {
+  const endpoint = new URL("https://news.google.com/rss/search");
+  endpoint.searchParams.set("q", query);
+  endpoint.searchParams.set("hl", "en-US");
+  endpoint.searchParams.set("gl", "US");
+  endpoint.searchParams.set("ceid", "US:en");
+
+  const response = await fetch(endpoint, {
+    headers: {
+      "User-Agent": "Tickwise/1.0 (company news monitor)",
+      Accept: "application/rss+xml, application/xml, text/xml",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`News search failed (${response.status})`);
+  }
+  return parseRss(await response.text());
+}
+
+async function searchGoogleNews(
+  company: CompanyRef,
+  windowMs: number
+): Promise<NewsHit[]> {
+  const hours = windowMs / 3_600_000;
+  const quoted = company.tick
+    ? `"${company.name}" OR ${company.tick}`
+    : `"${company.name}"`;
+  const primary = await fetchGoogleNews(`${quoted} when:${googleWhen(hours)}`);
+  const hits = filterHits(primary, windowMs, company);
+  if (hits.length > 0 || hours >= 48) return hits.slice(0, 12);
+  const wider = await fetchGoogleNews(`${quoted} when:2d`);
+  return filterHits(wider, windowMs, company).slice(0, 12);
+}
+
 function recency(hours: number): "hour" | "day" | "week" {
   if (hours <= 1) return "hour";
   if (hours <= 24) return "day";
@@ -122,8 +271,9 @@ function parsePublished(value: string | null | undefined): string | null {
 export async function searchCompanyNews(
   company: CompanyRef,
   windowMs: number,
-  apiKey: string
+  apiKey: string | undefined
 ): Promise<NewsHit[]> {
+  if (!apiKey) return searchGoogleNews(company, windowMs);
   const hours = windowMs / 3_600_000;
   const who = company.tick ? `${company.name} (${company.tick})` : company.name;
   const query = company.domain
@@ -169,12 +319,17 @@ export async function searchCompanyNews(
   return filterHits(hits, windowMs).slice(0, 12);
 }
 
-function filterHits(hits: NewsHit[], windowMs: number): NewsHit[] {
+function filterHits(
+  hits: NewsHit[],
+  windowMs: number,
+  company?: CompanyRef
+): NewsHit[] {
   const since = Date.now() - windowMs;
   const seen = new Set<string>();
   const kept: NewsHit[] = [];
   for (const hit of hits) {
     if (new Date(hit.publishedAt).getTime() < since) continue;
+    if (company && !mentionsCompany(`${hit.title} ${hit.summary}`, company)) continue;
     if (seen.has(hit.url)) continue;
     seen.add(hit.url);
     kept.push(hit);
