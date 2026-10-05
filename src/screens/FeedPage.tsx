@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
   Clock,
@@ -137,6 +137,45 @@ const MATERIALITIES: FeedItem["materiality"][] = [
   "noteworthy",
 ];
 
+// Marca como "cayendo" las cards que aparecen después del primer render
+function useFallingItemIds(items: FeedItem[]) {
+  const seenRef = useRef<Set<string> | null>(null);
+  const [fallingIds, setFallingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const ids = items.map((item) => item.id);
+    if (seenRef.current === null) {
+      seenRef.current = new Set(ids);
+      return;
+    }
+
+    const fresh = ids.filter((id) => !seenRef.current!.has(id));
+    const live = new Set(ids);
+    for (const id of seenRef.current) {
+      if (!live.has(id)) seenRef.current.delete(id);
+    }
+    if (fresh.length === 0) return;
+
+    fresh.forEach((id) => seenRef.current!.add(id));
+    setFallingIds((prev) => {
+      const next = new Set(prev);
+      fresh.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [items]);
+
+  const onFell = useCallback((id: string) => {
+    setFallingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  return { fallingIds, onFell };
+}
+
 export function FeedPage({
   items,
   noiseRules,
@@ -151,6 +190,7 @@ export function FeedPage({
   const [materiality, setMateriality] = useState("all");
   const [inbox, setInbox] = useState<"unread" | "read">("unread");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { fallingIds, onFell } = useFallingItemIds(items);
 
   // Días disponibles (únicos, ordenados desc)
   const days = useMemo(() => {
@@ -394,7 +434,16 @@ export function FeedPage({
           const why = item.whyItMatters ? decodeEntities(item.whyItMatters) : "";
           const canExpand = Boolean(why || body);
           return (
-            <Card key={item.id} className="transition-shadow hover:shadow-md">
+            <Card
+              key={item.id}
+              className={cn(
+                "transition-shadow hover:shadow-md",
+                fallingIds.has(item.id) && "animate-feed-card-fall"
+              )}
+              onAnimationEnd={(event) => {
+                if (event.target === event.currentTarget) onFell(item.id);
+              }}
+            >
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-2">
                   <input

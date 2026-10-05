@@ -54,3 +54,9 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-feed-card-fall {
+    animation: none;
+  }
+}

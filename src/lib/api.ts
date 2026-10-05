@@ -580,6 +580,8 @@ export interface ScrapeSummary {
   itemsFound: number;
   itemsKept: number;
   windowHours: number;
+  emailsSent: number;
+  emailError?: string;
 }
 
 export async function runCron(
@@ -612,6 +614,17 @@ export async function runCron(
       data && typeof data === "object" && typeof data.windowHours === "number"
         ? data.windowHours
         : 0,
+    emailsSent:
+      data && typeof data === "object" && typeof data.emailsSent === "number"
+        ? data.emailsSent
+        : 0,
+    emailError:
+      data &&
+      typeof data === "object" &&
+      typeof data.emailError === "string" &&
+      data.emailError
+        ? data.emailError
+        : undefined,
   };
   return { org: await loadOrgData(orgId), summary };
 }

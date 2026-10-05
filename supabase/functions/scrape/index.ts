@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
+  sendFeedDigestEmail,
+  type DigestStory,
+} from "./digest.ts";
+import {
   companyRef,
   scoreHeuristic,
   screenReason,
@@ -160,7 +164,8 @@ async function scrape(req: Request) {
       if (upsertError) throw new Error(upsertError.message);
     }
 
-    const itemsKept = rows.filter((row) => !row.screened).length;
+    const kept = rows.filter((row) => !row.screened);
+    const itemsKept = kept.length;
     await admin
       .from("cron_runs")
       .update({
@@ -171,11 +176,29 @@ async function scrape(req: Request) {
       })
       .eq("id", run.id);
 
+    const email = await deliverDigest(admin, {
+      orgId,
+      runId: run.id,
+      stories: kept.map((row) => ({
+        tick: row.tick,
+        title: row.title,
+        summary: row.summary,
+        whyItMatters: row.why_it_matters,
+        url: row.url,
+        publishedAt: row.published_at,
+        category: row.category,
+        materiality: row.materiality,
+      })),
+      screenedCount: rows.length - itemsKept,
+    });
+
     return {
       ok: true,
       itemsFound: rows.length,
       itemsKept,
       windowHours: hours,
+      emailsSent: email.emailsSent,
+      ...(email.emailError ? { emailError: email.emailError } : {}),
     };
   } catch (error) {
     await admin
@@ -377,4 +400,48 @@ function isCategory(value: unknown): value is FeedCategory {
     value === "Regulation" ||
     value === "Market"
   );
+}
+
+// Manda el digest a los recipients de la org. El scrape ya quedó guardado.
+async function deliverDigest(
+  admin: ReturnType<typeof createClient>,
+  input: {
+    orgId: string;
+    runId: string;
+    stories: DigestStory[];
+    screenedCount: number;
+  }
+) {
+  const apiKey = Deno.env.get("RESEND_API_KEY")?.trim();
+  if (!apiKey) {
+    return { emailsSent: 0, emailError: "RESEND_API_KEY is not set" };
+  }
+
+  const [{ data: org }, { data: recipientRows }] = await Promise.all([
+    admin.from("organizations").select("name, logo_url").eq("id", input.orgId).single(),
+    admin.from("recipients").select("email").eq("org_id", input.orgId),
+  ]);
+  const recipients = (recipientRows ?? []).map((row) => row.email);
+  if (recipients.length === 0) return { emailsSent: 0 };
+
+  try {
+    return await sendFeedDigestEmail({
+      apiKey,
+      from: Deno.env.get("RESEND_FROM")?.trim() || "Tickwise <onboarding@resend.dev>",
+      recipients,
+      orgId: input.orgId,
+      runId: input.runId,
+      digest: {
+        orgName: org?.name?.trim() || "Tickwise",
+        logoUrl: org?.logo_url ?? null,
+        stories: input.stories,
+        screenedCount: input.screenedCount,
+      },
+    });
+  } catch (error) {
+    return {
+      emailsSent: 0,
+      emailError: error instanceof Error ? error.message : "Failed to send digest",
+    };
+  }
 }

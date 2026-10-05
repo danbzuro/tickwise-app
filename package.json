@@ -8,7 +8,7 @@
     "build": "next build",
     "build:prod": "dotenv -e .env --override -- next build",
     "start": "next start",
-    "functions": "supabase functions serve"
+    "functions": "supabase functions serve --env-file .env.development"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

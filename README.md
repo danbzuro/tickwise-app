@@ -25,7 +25,7 @@ npm install
 cp .env.example .env.development
 ```
 
-Fill `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.development` (local) or `.env` (production). Scrape API keys stay in Supabase (`supabase secrets set` / `npm run functions`), not in these files.
+Fill `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `RESEND_API_KEY` in `.env.development` (local) or `.env` (production). The scrape Edge Function reads `RESEND_API_KEY` (and optional `RESEND_FROM`) from that env file locally (`npm run functions`) and from `supabase secrets set` in production. Other scrape keys (`PERPLEXITY_API_KEY`, `OPENAI_API_KEY`) stay in Supabase secrets.
 
 ```bash
 npm run dev        # local env (.env.development)

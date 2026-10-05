@@ -25,6 +25,14 @@ function formatTime12(time: string) {
   return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface WorkspaceContextValue {
   orgId: string;
   data: OrgData;
@@ -146,18 +154,49 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRunError(null);
     try {
       const { org, summary } = await api.runCron(orgId);
-      setData(org);
-      notify(
+      const previousIds = new Set((data?.feedItems ?? []).map((item) => item.id));
+      const incoming = org.feedItems
+        .filter((item) => !previousIds.has(item.id))
+        .sort((a, b) => a.publishedAt.localeCompare(b.publishedAt));
+      const kept = org.feedItems.filter((item) => previousIds.has(item.id));
+
+      const result =
         summary.itemsKept > 0
-          ? `Found ${summary.itemsFound}, kept ${summary.itemsKept}`
-          : `Run finished. No new stories (${summary.itemsFound} found, ${summary.windowHours}h window).`
-      );
+          ? `Found ${summary.itemsFound}, kept ${summary.itemsKept}.`
+          : `Run finished. No new stories (${summary.itemsFound} found, ${summary.windowHours}h window).`;
+      const email = summary.emailError
+        ? ` Email failed: ${summary.emailError}`
+        : summary.emailsSent > 0
+          ? ` Sent to ${summary.emailsSent} ${summary.emailsSent === 1 ? "recipient" : "recipients"}.`
+          : "";
+      notify(`${result}${email}`);
+
+      // El scrape llega en lote: mantenemos lo ya visto y hacemos caer las nuevas
+      setData({ ...org, feedItems: kept });
+
+      if (incoming.length > 0 && !prefersReducedMotion()) {
+        const gap = incoming.length > 10 ? 120 : 220;
+        for (const item of incoming) {
+          await sleep(gap);
+          setData((current) => {
+            if (!current || current.feedItems.some((row) => row.id === item.id)) {
+              return current;
+            }
+            const feedItems = [...current.feedItems, item].sort((a, b) =>
+              b.publishedAt.localeCompare(a.publishedAt)
+            );
+            return { ...current, feedItems };
+          });
+        }
+      } else if (incoming.length > 0) {
+        setData(org);
+      }
     } catch (e) {
       setRunError((e as Error).message);
     } finally {
       setIsRunning(false);
     }
-  }, [orgId, notify]);
+  }, [orgId, data, notify]);
 
   const saveSourceH = useCallback(
     async (
