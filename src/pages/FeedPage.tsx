@@ -10,6 +10,7 @@ import {
   EyeOff,
   Check,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   Card,
@@ -205,8 +206,10 @@ export function FeedPage({
     setSelected(new Set());
   }
 
+  const readLabel = inbox === "read" ? "Mark as unread" : "Mark as read";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {/* Encabezado de página */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -328,32 +331,37 @@ export function FeedPage({
       </div>
 
       {selected.size > 0 && (
-        <div className="sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm shadow-sm">
-          <span className="text-muted-foreground">{selected.size} selected</span>
-          <Button
-            size="sm"
-            onClick={() => mark([...selected], inbox !== "read")}
-          >
-            <Check className="h-3.5 w-3.5" />
-            {inbox === "read" ? "Mark as unread" : "Mark as read"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            onClick={() => dismiss([...selected])}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="ml-auto"
-            onClick={() => setSelected(new Set())}
-          >
-            Clear
-          </Button>
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4 md:left-64">
+          <div className="pointer-events-auto flex items-center gap-2 rounded-xl border bg-card px-3 py-2 shadow">
+            <span className="text-sm text-muted-foreground">
+              {selected.size} selected
+            </span>
+            <Button
+              size="sm"
+              onClick={() => mark([...selected], inbox !== "read")}
+            >
+              <Check className="h-3.5 w-3.5" />
+              {readLabel}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive hover:text-destructive"
+              onClick={() => dismiss([...selected])}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => setSelected(new Set())}
+              aria-label="Clear selection"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 
