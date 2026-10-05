@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Building2, Upload, ImageIcon, X, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Building2, Upload, ImageIcon, X, Loader2, Check } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -34,7 +34,35 @@ export function OrganizationCard({
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
 
+  // Draft local del nombre: la UI responde en cada tecla, pero sólo persiste on-blur
+  const [nameDraft, setNameDraft] = useState(name);
+  const [showSaved, setShowSaved] = useState(false);
+
   const storedLogoUrl = logoUrl?.startsWith("http") ? logoUrl : null;
+
+  // Sincroniza el draft si el nombre cambia desde afuera (p. ej. recarga de datos)
+  useEffect(() => {
+    setNameDraft(name);
+  }, [name]);
+
+  // Persiste el nombre si cambió; revierte si quedó vacío
+  function commitName() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      setNameDraft(name);
+      return;
+    }
+    if (trimmed === name) return;
+    onNameChange(trimmed);
+    setShowSaved(true);
+  }
+
+  // Oculta el indicador "Saved" después de un rato
+  useEffect(() => {
+    if (!showSaved) return;
+    const t = setTimeout(() => setShowSaved(false), 2000);
+    return () => clearTimeout(t);
+  }, [showSaved]);
 
   // Sube el archivo a Storage. El padre persiste la URL pública.
   async function handleFile(file: File | undefined) {
@@ -97,10 +125,13 @@ export function OrganizationCard({
               handleFile(e.dataTransfer.files?.[0]);
             }}
             className={cn(
-              "group relative flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed transition-colors",
+              "group relative flex h-24 w-24 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border transition-colors",
               dragOver
                 ? "border-primary bg-accent"
-                : "border-input hover:bg-accent/50"
+                : storedLogoUrl
+                  ? // Fondo oscuro igual que el sidebar, para que los PNG con logo blanco se vean
+                    "border-primary bg-primary"
+                  : "border-dashed border-input hover:bg-accent/50"
             )}
           >
             {uploading ? (
@@ -148,11 +179,27 @@ export function OrganizationCard({
 
         {/* Nombre de la organización */}
         <div className="grid flex-1 gap-2">
-          <Label htmlFor="org-name">Organization name</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="org-name">Organization name</Label>
+            {showSaved && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Check className="h-3 w-3" />
+                Saved
+              </span>
+            )}
+          </div>
           <Input
             id="org-name"
-            value={name}
-            onChange={(e) => onNameChange(e.target.value)}
+            value={nameDraft}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitName();
+                e.currentTarget.blur();
+              }
+            }}
             placeholder="e.g. Tickwise"
             className="max-w-sm"
           />

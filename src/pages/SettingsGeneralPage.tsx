@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Plus, Trash2, Save, Mail, X } from "lucide-react";
+import { Clock, Plus, Trash2, Mail, X } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -219,14 +219,6 @@ export function SettingsGeneralPage({
           </div>
         </CardContent>
       </Card>
-
-      {/* Acciones (mock) */}
-      <div className="flex justify-end">
-        <Button>
-          <Save className="h-4 w-4" />
-          Save changes
-        </Button>
-      </div>
     </div>
   );
 }
