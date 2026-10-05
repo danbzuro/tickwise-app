@@ -12,6 +12,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { LandingPage } from "@/pages/LandingPage";
 import { AdminApp } from "@/components/AdminApp";
 import { useAuth } from "@/context/AuthProvider";
+import { useToast } from "@/components/ui/toast";
 import * as api from "@/lib/api";
 import type { OrgData } from "@/lib/api";
 import type { Materiality, MemberRole } from "@/data/mock";
@@ -79,6 +80,7 @@ export default function App() {
 // Workspace: sólo se monta con sesión activa. Resuelve la org y carga sus datos.
 // -----------------------------------------------------------------------------
 function Workspace({ signOut }: { signOut: () => Promise<void> }) {
+  const notify = useToast();
   const { user } = useAuth();
   const [orgId, setOrgId] = useState<string | null>(null);
   const [data, setData] = useState<OrgData | null>(null);
@@ -87,6 +89,23 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+
+  // Corre una mutación y avisa el resultado. Relanza el error para el modal.
+  const report = useCallback(
+    async (success: string, action: () => Promise<void>) => {
+      try {
+        await action();
+        notify(success);
+      } catch (error) {
+        notify(
+          error instanceof Error ? error.message : "Something went wrong",
+          "error"
+        );
+        throw error;
+      }
+    },
+    [notify]
+  );
 
   // Info del usuario para el sidebar (desde la sesión de auth)
   const userInfo = useMemo(() => {
@@ -158,155 +177,204 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
       input: { name: string; tick: string | null; url: string }
     ) => {
       if (!orgId) return;
-      if (id) {
-        const updated = await api.updateSource(id, input);
+      await report(id ? "Source updated" : "Source added", async () => {
+        if (id) {
+          const updated = await api.updateSource(id, input);
+          setData((d) =>
+            d
+              ? {
+                  ...d,
+                  sources: d.sources.map((s) => (s.id === id ? updated : s)),
+                }
+              : d
+          );
+          return;
+        }
+        const created = await api.addSource(orgId, input);
+        setData((d) => (d ? { ...d, sources: [...d.sources, created] } : d));
+      });
+    },
+    [orgId, report]
+  );
+
+  const deleteSourceH = useCallback(
+    async (id: string) => {
+      await report("Source deleted", async () => {
+        await api.removeSource(id);
+        setData((d) =>
+          d ? { ...d, sources: d.sources.filter((s) => s.id !== id) } : d
+        );
+      });
+    },
+    [report]
+  );
+
+  const addScheduleH = useCallback(async () => {
+    if (!orgId) return;
+    await report("Run added", async () => {
+      const s = await api.addSchedule(orgId);
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              schedules: [...d.schedules, s].sort((a, b) =>
+                a.time.localeCompare(b.time)
+              ),
+            }
+          : d
+      );
+    });
+  }, [orgId, report]);
+
+  const removeScheduleH = useCallback(
+    async (id: string) => {
+      await report("Run deleted", async () => {
+        await api.removeSchedule(id);
+        setData((d) =>
+          d ? { ...d, schedules: d.schedules.filter((s) => s.id !== id) } : d
+        );
+      });
+    },
+    [report]
+  );
+
+  const changeScheduleTimeH = useCallback(
+    async (id: string, time: string) => {
+      await report("Run updated", async () => {
+        await api.updateScheduleTime(id, time);
         setData((d) =>
           d
             ? {
                 ...d,
-                sources: d.sources.map((s) => (s.id === id ? updated : s)),
+                schedules: d.schedules.map((s) =>
+                  s.id === id ? { ...s, time } : s
+                ),
               }
             : d
         );
-        return;
-      }
-      const created = await api.addSource(orgId, input);
-      setData((d) => (d ? { ...d, sources: [...d.sources, created] } : d));
+      });
     },
-    [orgId]
+    [report]
   );
-
-  const deleteSourceH = useCallback(async (id: string) => {
-    await api.removeSource(id);
-    setData((d) =>
-      d ? { ...d, sources: d.sources.filter((s) => s.id !== id) } : d
-    );
-  }, []);
-
-  const addScheduleH = useCallback(async () => {
-    if (!orgId) return;
-    const s = await api.addSchedule(orgId);
-    setData((d) =>
-      d
-        ? {
-            ...d,
-            schedules: [...d.schedules, s].sort((a, b) =>
-              a.time.localeCompare(b.time)
-            ),
-          }
-        : d
-    );
-  }, [orgId]);
-
-  const removeScheduleH = useCallback(async (id: string) => {
-    await api.removeSchedule(id);
-    setData((d) =>
-      d ? { ...d, schedules: d.schedules.filter((s) => s.id !== id) } : d
-    );
-  }, []);
-
-  const changeScheduleTimeH = useCallback(async (id: string, time: string) => {
-    await api.updateScheduleTime(id, time);
-    setData((d) =>
-      d
-        ? {
-            ...d,
-            schedules: d.schedules.map((s) =>
-              s.id === id ? { ...s, time } : s
-            ),
-          }
-        : d
-    );
-  }, []);
 
   const toggleScheduleH = useCallback(
     async (id: string) => {
       const current = data?.schedules.find((s) => s.id === id);
       if (!current) return;
-      await api.toggleSchedule(id, !current.enabled);
-      setData((d) =>
-        d
-          ? {
-              ...d,
-              schedules: d.schedules.map((s) =>
-                s.id === id ? { ...s, enabled: !s.enabled } : s
-              ),
-            }
-          : d
-      );
+      const next = !current.enabled;
+      await report(next ? "Run enabled" : "Run disabled", async () => {
+        await api.toggleSchedule(id, next);
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                schedules: d.schedules.map((s) =>
+                  s.id === id ? { ...s, enabled: next } : s
+                ),
+              }
+            : d
+        );
+      });
     },
-    [data]
+    [data, report]
   );
 
   const addRecipientH = useCallback(
     async (email: string) => {
       if (!orgId || data?.recipients.includes(email)) return;
-      await api.addRecipient(orgId, email);
-      setData((d) => (d ? { ...d, recipients: [...d.recipients, email] } : d));
+      await report("Recipient added", async () => {
+        await api.addRecipient(orgId, email);
+        setData((d) =>
+          d ? { ...d, recipients: [...d.recipients, email] } : d
+        );
+      });
     },
-    [orgId, data]
+    [orgId, data, report]
   );
 
   const removeRecipientH = useCallback(
     async (email: string) => {
       if (!orgId) return;
-      await api.removeRecipient(orgId, email);
-      setData((d) =>
-        d ? { ...d, recipients: d.recipients.filter((e) => e !== email) } : d
-      );
+      await report("Recipient removed", async () => {
+        await api.removeRecipient(orgId, email);
+        setData((d) =>
+          d ? { ...d, recipients: d.recipients.filter((e) => e !== email) } : d
+        );
+      });
     },
-    [orgId]
+    [orgId, report]
   );
 
   // Helper para persistir noise_rules con un patch y actualizar estado
   const patchNoise = useCallback(
-    async (patch: Partial<OrgData["noiseRules"]>) => {
+    async (patch: Partial<OrgData["noiseRules"]>, success?: string) => {
       if (!orgId) return;
-      await api.updateNoiseRules(orgId, patch);
-      setData((d) =>
-        d ? { ...d, noiseRules: { ...d.noiseRules, ...patch } } : d
-      );
+      try {
+        await api.updateNoiseRules(orgId, patch);
+        setData((d) =>
+          d ? { ...d, noiseRules: { ...d.noiseRules, ...patch } } : d
+        );
+        if (success) notify(success);
+      } catch (error) {
+        notify(
+          error instanceof Error ? error.message : "Something went wrong",
+          "error"
+        );
+        throw error;
+      }
     },
-    [orgId]
+    [orgId, notify]
   );
 
   const addExcludeTermH = useCallback(
     (term: string) => {
       if (data?.noiseRules.excludeTerms.includes(term)) return;
-      patchNoise({
-        excludeTerms: [...(data?.noiseRules.excludeTerms ?? []), term],
-      });
+      void patchNoise(
+        {
+          excludeTerms: [...(data?.noiseRules.excludeTerms ?? []), term],
+        },
+        "Blocked term added"
+      );
     },
     [data, patchNoise]
   );
 
   const removeExcludeTermH = useCallback(
     (term: string) =>
-      patchNoise({
-        excludeTerms: (data?.noiseRules.excludeTerms ?? []).filter(
-          (t) => t !== term
-        ),
-      }),
+      void patchNoise(
+        {
+          excludeTerms: (data?.noiseRules.excludeTerms ?? []).filter(
+            (t) => t !== term
+          ),
+        },
+        "Blocked term removed"
+      ),
     [data, patchNoise]
   );
 
   const addExcludeDomainH = useCallback(
     (domain: string) => {
       if (data?.noiseRules.excludeDomains.includes(domain)) return;
-      patchNoise({
-        excludeDomains: [...(data?.noiseRules.excludeDomains ?? []), domain],
-      });
+      void patchNoise(
+        {
+          excludeDomains: [...(data?.noiseRules.excludeDomains ?? []), domain],
+        },
+        "Blocked domain added"
+      );
     },
     [data, patchNoise]
   );
 
   const removeExcludeDomainH = useCallback(
     (domain: string) =>
-      patchNoise({
-        excludeDomains: (data?.noiseRules.excludeDomains ?? []).filter(
-          (d) => d !== domain
-        ),
-      }),
+      void patchNoise(
+        {
+          excludeDomains: (data?.noiseRules.excludeDomains ?? []).filter(
+            (d) => d !== domain
+          ),
+        },
+        "Blocked domain removed"
+      ),
     [data, patchNoise]
   );
 
@@ -319,6 +387,21 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     (hours: number | null) => patchNoise({ maxLookbackHours: hours }),
     [patchNoise]
   );
+
+  const saveRulesH = useCallback(async () => {
+    if (!orgId || !data) return;
+    await api.updateNoiseRules(orgId, {
+      excludeTerms: data.noiseRules.excludeTerms,
+      excludeDomains: data.noiseRules.excludeDomains,
+      maxLookbackHours: data.noiseRules.maxLookbackHours,
+      minMateriality: data.noiseRules.minMateriality,
+    });
+    await Promise.all(
+      (["material", "potentially", "noteworthy"] as const).map((level) =>
+        api.updateGuideline(orgId, level, data.guidelines[level])
+      )
+    );
+  }, [orgId, data]);
 
   // Rúbrica: update local inmediato + persistencia (fire-and-forget)
   const setGuidelineH = useCallback(
@@ -347,26 +430,36 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
       setData((d) =>
         d ? { ...d, organization: { ...d.organization, logoUrl } } : d
       );
-      if (orgId) void api.updateOrganization(orgId, { logoUrl });
+      if (!orgId) return;
+      void report(logoUrl ? "Logo updated" : "Logo removed", () =>
+        api.updateOrganization(orgId, { logoUrl })
+      );
     },
-    [orgId]
+    [orgId, report]
   );
 
   const inviteMemberH = useCallback(
     async (email: string, role: MemberRole) => {
       if (!orgId || data?.members.some((m) => m.email === email)) return;
-      const m = await api.inviteMember(orgId, email, role);
-      setData((d) => (d ? { ...d, members: [...d.members, m] } : d));
+      await report("Invite sent", async () => {
+        const m = await api.inviteMember(orgId, email, role);
+        setData((d) => (d ? { ...d, members: [...d.members, m] } : d));
+      });
     },
-    [orgId, data]
+    [orgId, data, report]
   );
 
-  const removeMemberH = useCallback(async (id: string) => {
-    await api.removeMember(id);
-    setData((d) =>
-      d ? { ...d, members: d.members.filter((m) => m.id !== id) } : d
-    );
-  }, []);
+  const removeMemberH = useCallback(
+    async (id: string) => {
+      await report("Member removed", async () => {
+        await api.removeMember(id);
+        setData((d) =>
+          d ? { ...d, members: d.members.filter((m) => m.id !== id) } : d
+        );
+      });
+    },
+    [report]
+  );
 
   const resendInviteH = useCallback((_id: string) => {
     // Mock: en un backend real re-dispararía el email de invitación
@@ -482,6 +575,7 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
                     onChangeMinMateriality={setMinMaterialityH}
                     onChangeMaxLookback={setMaxLookbackH}
                     onChangeGuideline={setGuidelineH}
+                    onSave={saveRulesH}
                   />
                 }
               />

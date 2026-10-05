@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { OrgFormModal, type OrgFormValues } from "@/components/admin/OrgFormModal";
 import { DeleteOrgDialog } from "@/components/admin/DeleteOrgDialog";
+import { useToast } from "@/components/ui/toast";
 import * as api from "@/lib/api";
 import type { AdminOrg } from "@/lib/api";
 
@@ -48,6 +49,7 @@ export function AdminOrganizationsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<AdminOrg | null>(null);
   const [deleting, setDeleting] = useState<AdminOrg | null>(null);
+  const notify = useToast();
 
   const refresh = useCallback(async () => {
     try {
@@ -79,30 +81,49 @@ export function AdminOrganizationsPage() {
 
   const handleSubmit = useCallback(
     async (values: OrgFormValues) => {
-      if (editing) {
-        await api.updateOrganizationAdmin(editing.id, {
-          name: values.name.trim(),
-          slug: values.slug.trim() || null,
-          supportEmail: values.supportEmail.trim() || null,
-          primaryColor: values.primaryColor.trim() || null,
-        });
-      } else {
-        await api.createOrganization({
-          name: values.name.trim(),
-          slug: values.slug.trim() || undefined,
-          ownerEmail: values.ownerEmail.trim() || undefined,
-        });
+      try {
+        if (editing) {
+          await api.updateOrganizationAdmin(editing.id, {
+            name: values.name.trim(),
+            slug: values.slug.trim() || null,
+            supportEmail: values.supportEmail.trim() || null,
+            primaryColor: values.primaryColor.trim() || null,
+          });
+          notify("Organization updated");
+        } else {
+          await api.createOrganization({
+            name: values.name.trim(),
+            slug: values.slug.trim() || undefined,
+            ownerEmail: values.ownerEmail.trim() || undefined,
+          });
+          notify("Organization created");
+        }
+        await refresh();
+      } catch (error) {
+        notify(
+          error instanceof Error ? error.message : "Something went wrong",
+          "error"
+        );
+        throw error;
       }
-      await refresh();
     },
-    [editing, refresh]
+    [editing, refresh, notify]
   );
 
   const handleDelete = useCallback(async () => {
     if (!deleting) return;
-    await api.deleteOrganization(deleting.id);
-    await refresh();
-  }, [deleting, refresh]);
+    try {
+      await api.deleteOrganization(deleting.id);
+      notify("Organization deleted");
+      await refresh();
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Something went wrong",
+        "error"
+      );
+      throw error;
+    }
+  }, [deleting, refresh, notify]);
 
   return (
     <div className="space-y-6">

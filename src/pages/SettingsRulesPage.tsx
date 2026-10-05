@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingsNav } from "@/components/SettingsNav";
+import { useToast } from "@/components/ui/toast";
 import type {
   NoiseRules,
   Materiality,
@@ -29,6 +30,7 @@ interface SettingsRulesPageProps {
   onChangeMinMateriality: (level: Materiality) => void;
   onChangeMaxLookback: (hours: number | null) => void;
   onChangeGuideline: (level: Materiality, text: string) => void;
+  onSave: () => Promise<void>;
 }
 
 // Presets de ventana de frescura (null = "Since last run")
@@ -73,9 +75,24 @@ export function SettingsRulesPage({
   onChangeMinMateriality,
   onChangeMaxLookback,
   onChangeGuideline,
+  onSave,
 }: SettingsRulesPageProps) {
   const [termDraft, setTermDraft] = useState("");
   const [domainDraft, setDomainDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const notify = useToast();
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave();
+      notify("Saved successfully");
+    } catch (err) {
+      notify((err as Error).message, "error");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const lookback = noiseRules.maxLookbackHours;
   // "custom" = hay un valor que no coincide con ningún preset
@@ -368,13 +385,13 @@ export function SettingsRulesPage({
         </CardContent>
       </Card>
 
-      {/* Acciones (mock) */}
       <div className="flex justify-end">
-        <Button>
+        <Button type="button" onClick={handleSave} disabled={saving}>
           <Save className="h-4 w-4" />
-          Save changes
+          {saving ? "Saving..." : "Save changes"}
         </Button>
       </div>
+
     </div>
   );
 }
