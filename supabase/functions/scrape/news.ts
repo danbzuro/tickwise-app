@@ -8,7 +8,6 @@ export interface CompanyRef {
   name: string;
   tick: string | null;
   domain: string;
-  query: string;
 }
 
 export interface NewsHit {
@@ -65,14 +64,10 @@ export function companyRef(source: {
     .replace(/\s+/g, " ")
     .trim();
   const name = cleaned.length >= 2 ? cleaned : brand || source.name.trim();
-  const parts = [name];
-  if (source.tick) parts.push(source.tick);
-  if (domain) parts.push(domain);
   return {
     name,
-    tick: source.tick,
+    tick: source.tick?.trim() ? source.tick.trim() : null,
     domain,
-    query: parts.join(" "),
   };
 }
 
@@ -162,7 +157,7 @@ function articleUrl(link: string): string {
   return link;
 }
 
-// Nombres de una sola palabra que también son palabras comunes.
+// Marcas de una sola palabra: Google las resuelve, pero en el texto hace falta otra pista.
 const AMBIGUOUS = new Set([
   "apple",
   "meta",
@@ -173,29 +168,183 @@ const AMBIGUOUS = new Set([
   "block",
   "snap",
 ]);
+
+// Palabras comunes que no identifican a la empresa si se buscan solas.
+// "Strategy" es el nombre de MSTR y también un sustantivo cualquiera.
+const GENERIC = new Set([
+  "strategy",
+  "strategies",
+  "capital",
+  "group",
+  "global",
+  "general",
+  "national",
+  "international",
+  "american",
+  "united",
+  "first",
+  "digital",
+  "advanced",
+  "energy",
+  "health",
+  "power",
+  "financial",
+  "finance",
+  "holdings",
+  "partners",
+  "solutions",
+  "services",
+  "systems",
+  "technology",
+  "software",
+  "network",
+  "media",
+  "management",
+  "investment",
+  "investments",
+  "resources",
+  "industries",
+  "properties",
+  "communications",
+  "focus",
+  "ventures",
+  "enterprise",
+  "enterprises",
+  "security",
+  "payments",
+]);
+
 const COMPANY_CUE =
   /\b(inc|corp|shares|stock|nasdaq|nyse|earnings|ceo|cfo|guidance|revenue|profit|announces|unveils|launches|launch|acquire|merger|lawsuit|recall|iphone|macbook)\b/i;
 
-function mentionsCompany(text: string, company: CompanyRef): boolean {
-  const haystack = text.toLowerCase();
-  if (
-    company.tick &&
-    new RegExp(`\\b${company.tick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text)
-  ) {
-    return true;
-  }
-  const tokens = company.name
+// Verbo o rol que indica que el nombre genérico es el sujeto de la nota.
+const ROLE_AFTER =
+  /^(announces?|announce|buys?|bought|buying|purchases?|purchased|reports?|adds?|added|adding|plans?|planned|acquires?|acquired|acquiring|posts?|posted|names?|named|appoints?|appointed|launches?|launched|unveils?|unveiled|beats?|misses?|missed|guides?|slides?|jumps?|falls?|rises?|surges?|drops?|tumbles?|soars?|raises?|raised|cuts?|cut|sells?|sold|files?|filed|settles?|settled|recalls?|recalled|holds?|held|holding|owns?|owned|expands?|expanded|boosts?|boosted|warns?|warned|faces?|faced|seeks?|sought|considers?|weighs?|eyes|eyed|targets?|forecasts?|forecasted)$/i;
+const CORPORATE_AFTER =
+  /^(inc|incorporated|corp|corporation|ltd|plc|co|company|holdings|group)$/i;
+const BRIDGE_AFTER =
+  /^(is|are|was|were|has|have|had|will|now|just|still|also|today|recently|keeps?|continues?)$/i;
+// Palabra previa que vuelve común al nombre: "investment strategy", "picks and strategy".
+const MODIFIER_BEFORE =
+  /^(investment|investing|trading|betting|marketing|business|exit|growth|pricing|product|data|risk|game|nfl|dfs|fantasy|football|content|brand|media|military|political|legal|winning|picks?|showdown|best|good|great|new|our|your|their|this|that|a|an|the|and|or|of|for|in|on|to|with|its|his|her|my|national|global|corporate|overall)$/i;
+const POSSESSIVE = /^['\u2018\u2019\u02BC]s\b/i;
+// Si el titular empieza por el nombre, estas continuaciones siguen siendo la palabra común.
+const GENERIC_NOISE_AFTER =
+  /^(for|guide|tips|vs|versus|of|fest|festival)$/i;
+const AMBIGUOUS_NOISE_AFTER =
+  /^(pie|pies|fest|festival|recipe|recipes|cider|juice|orchard|orchards|season|crop|crops|harvest|picking|crisp|butter|tart|sauce|crumble)$/i;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function nameTokens(name: string): string[] {
+  return name
     .toLowerCase()
     .split(/\s+/)
     .filter((token) => token.length > 2);
-  if (tokens.length === 0) return true;
+}
+
+// Un solo token y es una palabra de diccionario, no una marca.
+export function isGenericName(name: string): boolean {
+  const tokens = nameTokens(name);
+  return tokens.length === 1 && GENERIC.has(tokens[0]);
+}
+
+function hasTicker(text: string, tick: string | null): boolean {
+  if (!tick || tick.length < 3) return false;
+  return new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(tick)}([^A-Za-z0-9]|$)`, "i").test(
+    text
+  );
+}
+
+function nextWord(text: string): { word: string; rest: string } | null {
+  const match = text.match(/^[^A-Za-z0-9]*([A-Za-z0-9]+)/);
+  if (!match || match.index == null) return null;
+  return {
+    word: match[1],
+    rest: text.slice(match.index + match[0].length),
+  };
+}
+
+function previousWord(before: string): string {
+  const trimmed = before.replace(/['’]s\s*$/i, "").trim();
+  const parts = trimmed.split(/[^A-Za-z0-9]+/).filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+// "Strategy announces…" sí. "investment strategy" o "picks and strategy" no.
+function genericNameIsSubject(
+  text: string,
+  name: string,
+  tick: string | null
+): boolean {
+  const re = new RegExp(
+    `(^|[^A-Za-z0-9])(${escapeRegExp(name)})(?=[^A-Za-z0-9]|$)`,
+    "gi"
+  );
+  for (const match of text.matchAll(re)) {
+    const start = (match.index ?? 0) + match[1].length;
+    const prev = previousWord(text.slice(0, start));
+    if (prev && MODIFIER_BEFORE.test(prev)) continue;
+
+    const after = text.slice(start + name.length);
+    // "Strategy's bitcoin" es la empresa. "the strategy's" ya se descartó por el modificador.
+    if (POSSESSIVE.test(after)) return true;
+
+    if (
+      tick &&
+      new RegExp(`^\\W{0,3}\\(?\\s*${escapeRegExp(tick)}\\b`, "i").test(after)
+    ) {
+      return true;
+    }
+
+    const first = nextWord(after);
+    if (!first) continue;
+    if (CORPORATE_AFTER.test(first.word) || ROLE_AFTER.test(first.word)) return true;
+    if (!BRIDGE_AFTER.test(first.word)) continue;
+    const second = nextWord(first.rest);
+    if (second && (CORPORATE_AFTER.test(second.word) || ROLE_AFTER.test(second.word))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// El nombre abre el titular: "Apple and Google…", no "Apple pie" ni "Strategy for Monday".
+function nameLeads(text: string, name: string, generic: boolean): boolean {
+  const match = text.match(/^\s*["“']*([A-Za-z0-9]+)/);
+  if (!match || match[1].toLowerCase() !== name.toLowerCase()) return false;
+  const rest = text.slice((match.index ?? 0) + match[0].length).replace(POSSESSIVE, "");
+  const second = nextWord(rest);
+  if (!second) return true;
+  const noise = generic ? GENERIC_NOISE_AFTER : AMBIGUOUS_NOISE_AFTER;
+  return !noise.test(second.word);
+}
+
+function nameRefersToCompany(
+  text: string,
+  name: string,
+  tick: string | null,
+  generic: boolean
+): boolean {
+  return nameLeads(text, name, generic) || genericNameIsSubject(text, name, tick);
+}
+
+export function mentionsCompany(text: string, company: CompanyRef): boolean {
+  const haystack = text.toLowerCase();
+  if (hasTicker(text, company.tick)) return true;
+  if (company.domain && haystack.includes(company.domain)) return true;
+
+  const tokens = nameTokens(company.name);
+  if (tokens.length === 0) return false;
   if (!tokens.every((token) => haystack.includes(token))) return false;
   if (tokens.length >= 2) return true;
+  if (isGenericName(company.name)) {
+    return nameRefersToCompany(text, tokens[0], company.tick, true);
+  }
   if (!AMBIGUOUS.has(tokens[0])) return true;
-  return (
-    COMPANY_CUE.test(text) ||
-    (company.domain !== "" && haystack.includes(company.domain))
-  );
+  return COMPANY_CUE.test(text) || nameRefersToCompany(text, tokens[0], company.tick, false);
 }
 
 function parseRss(xml: string): NewsHit[] {
@@ -252,18 +401,63 @@ async function fetchGoogleNews(query: string): Promise<NewsHit[]> {
   return parseRss(await response.text());
 }
 
+function quoteTerm(value: string): string {
+  return `"${value.replace(/"/g, "")}"`;
+}
+
+// Cláusulas que identifican a la empresa. Un nombre genérico no va suelto.
+function identityClauses(company: CompanyRef): string[] {
+  const clauses: string[] = [];
+  const name = company.name.trim();
+  const tick = company.tick?.trim() ?? "";
+  const generic = name !== "" && isGenericName(name);
+
+  if (tick.length >= 3) clauses.push(quoteTerm(tick));
+  else if (tick && name) clauses.push(`${quoteTerm(name)} ${quoteTerm(tick)}`);
+
+  if (company.domain) clauses.push(quoteTerm(company.domain));
+
+  if (name && !generic) {
+    clauses.push(quoteTerm(name));
+  } else if (name && generic) {
+    for (const suffix of ["Inc", "Corp", "Corporation"]) {
+      clauses.push(quoteTerm(`${name} ${suffix}`));
+    }
+  }
+
+  return [...new Set(clauses)];
+}
+
+export function googleNewsQuery(company: CompanyRef, when: string): string {
+  const clauses = identityClauses(company);
+  const core =
+    clauses.length === 0
+      ? quoteTerm(company.name.trim() || company.domain || company.tick || "company")
+      : clauses.length === 1
+        ? clauses[0]
+        : `(${clauses.join(" OR ")})`;
+  return `${core} when:${when}`;
+}
+
+export function perplexityNewsQuery(company: CompanyRef): string {
+  const parts = [`the public company ${company.name}`];
+  if (company.tick) parts.push(`ticker ${company.tick}`);
+  if (company.domain) parts.push(`website ${company.domain}`);
+  const caution = isGenericName(company.name)
+    ? ` The word "${company.name}" by itself is not this company; skip articles that only use it as an ordinary word.`
+    : "";
+  return `Recent news about ${parts.join(", ")}.${caution} Only stories about that company: its stock, earnings, products, regulation, deals, or leadership.`;
+}
+
 async function searchGoogleNews(
   company: CompanyRef,
   windowMs: number
 ): Promise<NewsHit[]> {
   const hours = windowMs / 3_600_000;
-  const quoted = company.tick
-    ? `"${company.name}" OR ${company.tick}`
-    : `"${company.name}"`;
-  const primary = await fetchGoogleNews(`${quoted} when:${googleWhen(hours)}`);
+  const primary = await fetchGoogleNews(googleNewsQuery(company, googleWhen(hours)));
   const hits = filterHits(primary, windowMs, company);
   if (hits.length > 0 || hours >= 48) return hits.slice(0, 12);
-  const wider = await fetchGoogleNews(`${quoted} when:2d`);
+  const wider = await fetchGoogleNews(googleNewsQuery(company, "2d"));
   return filterHits(wider, windowMs, company).slice(0, 12);
 }
 
@@ -297,10 +491,7 @@ export async function searchCompanyNews(
 ): Promise<NewsHit[]> {
   if (!apiKey) return searchGoogleNews(company, windowMs);
   const hours = windowMs / 3_600_000;
-  const who = company.tick ? `${company.name} (${company.tick})` : company.name;
-  const query = company.domain
-    ? `Recent news about the company ${who}, ${company.domain}`
-    : `Recent news about the company ${who}`;
+  const query = perplexityNewsQuery(company);
 
   const response = await fetch("https://api.perplexity.ai/search", {
     method: "POST",
@@ -341,7 +532,7 @@ export async function searchCompanyNews(
       publishedAt: published ?? new Date().toISOString(),
     });
   }
-  return filterHits(hits, windowMs).slice(0, 12);
+  return filterHits(hits, windowMs, company).slice(0, 12);
 }
 
 function filterHits(
