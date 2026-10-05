@@ -426,14 +426,23 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
   );
 
   const setOrgLogoH = useCallback(
-    (logoUrl: string | null) => {
-      setData((d) =>
-        d ? { ...d, organization: { ...d.organization, logoUrl } } : d
-      );
+    async (file: File | null) => {
       if (!orgId) return;
-      void report(logoUrl ? "Logo updated" : "Logo removed", () =>
-        api.updateOrganization(orgId, { logoUrl })
-      );
+      if (!file) {
+        await report("Logo removed", async () => {
+          await api.removeOrganizationLogo(orgId);
+          setData((d) =>
+            d ? { ...d, organization: { ...d.organization, logoUrl: null } } : d
+          );
+        });
+        return;
+      }
+      await report("Logo updated", async () => {
+        const logoUrl = await api.uploadOrganizationLogo(orgId, file);
+        setData((d) =>
+          d ? { ...d, organization: { ...d.organization, logoUrl } } : d
+        );
+      });
     },
     [orgId, report]
   );

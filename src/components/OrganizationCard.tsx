@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Building2, Upload, ImageIcon, X } from "lucide-react";
+import { Building2, Upload, ImageIcon, X, Loader2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,11 +11,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
+const ACCEPTED_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
 interface OrganizationCardProps {
   name: string;
   logoUrl: string | null;
   onNameChange: (name: string) => void;
-  onLogoChange: (url: string | null) => void;
+  onLogoChange: (file: File | null) => Promise<void>;
 }
 
 export function OrganizationCard({
@@ -26,11 +32,34 @@ export function OrganizationCard({
 }: OrganizationCardProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  // Convierte el archivo a una URL local para previsualizar (mock)
-  function handleFile(file: File | undefined) {
-    if (!file || !file.type.startsWith("image/")) return;
-    onLogoChange(URL.createObjectURL(file));
+  const storedLogoUrl = logoUrl?.startsWith("http") ? logoUrl : null;
+
+  // Sube el archivo a Storage. El padre persiste la URL pública.
+  async function handleFile(file: File | undefined) {
+    if (!file || !ACCEPTED_LOGO_TYPES.has(file.type) || uploading) return;
+    setUploading(true);
+    try {
+      await onLogoChange(file);
+    } catch {
+      // El padre ya muestra el error.
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  async function removeLogo() {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      await onLogoChange(null);
+    } catch {
+      // El padre ya muestra el error.
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -50,8 +79,11 @@ export function OrganizationCard({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => {
+              if (!uploading) inputRef.current?.click();
+            }}
             onKeyDown={(e) => {
+              if (uploading) return;
               if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
             }}
             onDragOver={(e) => {
@@ -71,10 +103,12 @@ export function OrganizationCard({
                 : "border-input hover:bg-accent/50"
             )}
           >
-            {logoUrl ? (
+            {uploading ? (
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            ) : storedLogoUrl ? (
               <>
                 <img
-                  src={logoUrl}
+                  src={storedLogoUrl}
                   alt="Organization logo"
                   className="h-full w-full object-cover"
                 />
@@ -90,11 +124,12 @@ export function OrganizationCard({
             )}
           </div>
 
-          {logoUrl && (
+          {storedLogoUrl && (
             <button
               type="button"
-              onClick={() => onLogoChange(null)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
+              onClick={() => void removeLogo()}
+              disabled={uploading}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
             >
               <X className="h-3 w-3" />
               Remove
@@ -104,9 +139,10 @@ export function OrganizationCard({
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             className="hidden"
-            onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
+            disabled={uploading}
+            onChange={(e) => void handleFile(e.target.files?.[0] ?? undefined)}
           />
         </div>
 
@@ -121,8 +157,8 @@ export function OrganizationCard({
             className="max-w-sm"
           />
           <p className="text-xs text-muted-foreground">
-            Drag &amp; drop an image onto the logo, or click to upload. PNG or
-            JPG.
+            Drag &amp; drop an image onto the logo, or click to upload. PNG,
+            JPG, or WEBP. Max 2 MB.
           </p>
         </div>
       </CardContent>

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { decodeEntities, extraCopy } from "@/lib/feedText";
 import { triage } from "@/lib/rules";
 import type { FeedItem, NoiseRules } from "@/data/mock";
 
@@ -385,6 +386,11 @@ export function FeedPage({
         {visible.map((item) => {
           const isOpen = expanded[item.id];
           const mat = materialityBadge[item.materiality];
+          const title = decodeEntities(item.title);
+          const summary = extraCopy(item.summary, title);
+          const body = extraCopy(item.content, title, item.summary);
+          const why = item.whyItMatters ? decodeEntities(item.whyItMatters) : "";
+          const canExpand = Boolean(why || body);
           return (
             <Card key={item.id} className="transition-shadow hover:shadow-md">
               <CardHeader>
@@ -408,49 +414,53 @@ export function FeedPage({
                     {formatTime(item.publishedAt)}
                   </span>
                 </div>
-                <CardTitle className="text-lg leading-snug">
-                  {item.title}
-                </CardTitle>
-                <CardDescription>{item.summary}</CardDescription>
+                <CardTitle className="text-lg leading-snug">{title}</CardTitle>
+                {summary && <CardDescription>{summary}</CardDescription>}
               </CardHeader>
 
-              {/* Contenido expandido: "¿y qué?" + detalle */}
-              {isOpen && (
+              {/* Contenido expandido: "¿y qué?" + detalle que no repite el titular */}
+              {isOpen && canExpand && (
                 <CardContent className="space-y-3 pt-0">
-                  {item.whyItMatters && (
+                  {why && (
                     <div className="rounded-md border bg-muted/40 p-3">
                       <div className="mb-1 flex items-center gap-1.5 text-xs font-medium">
                         <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
                         Why it matters
                       </div>
                       <p className="text-sm leading-relaxed text-muted-foreground">
-                        {item.whyItMatters}
+                        {why}
                       </p>
                     </div>
                   )}
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {item.content}
-                  </p>
+                  {body && (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {body}
+                    </p>
+                  )}
                 </CardContent>
               )}
 
               <CardContent className="flex items-center justify-between gap-2 pt-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => toggleExpand(item.id)}
-                  className="-ml-2"
-                >
-                  {isOpen ? (
-                    <>
-                      Show less <ChevronUp className="h-3.5 w-3.5" />
-                    </>
-                  ) : (
-                    <>
-                      Show more <ChevronDown className="h-3.5 w-3.5" />
-                    </>
-                  )}
-                </Button>
+                {canExpand ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleExpand(item.id)}
+                    className="-ml-2"
+                  >
+                    {isOpen ? (
+                      <>
+                        Show less <ChevronUp className="h-3.5 w-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        Show more <ChevronDown className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <span />
+                )}
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"

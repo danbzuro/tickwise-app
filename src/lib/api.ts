@@ -464,6 +464,59 @@ export async function updateOrganization(
   if (error) throw error;
 }
 
+const LOGO_BUCKET = "logos";
+const LOGO_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+function logoObjectPath(orgId: string, ext: string) {
+  return `${orgId}/logo.${ext}`;
+}
+
+// Sube el archivo a Storage y persiste la URL pública en la organización.
+export async function uploadOrganizationLogo(
+  orgId: string,
+  file: File
+): Promise<string> {
+  const ext = LOGO_TYPES[file.type];
+  if (!ext) throw new Error("Use a PNG, JPG, or WEBP image");
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error("Logo must be 2 MB or smaller");
+  }
+
+  const path = logoObjectPath(orgId, ext);
+  const { error: uploadError } = await supabase.storage
+    .from(LOGO_BUCKET)
+    .upload(path, file, {
+      upsert: true,
+      contentType: file.type,
+      cacheControl: "3600",
+    });
+  if (uploadError) throw uploadError;
+
+  // Otras extensiones quedan huérfanas si el formato cambia.
+  const stale = Object.values(LOGO_TYPES)
+    .filter((other) => other !== ext)
+    .map((other) => logoObjectPath(orgId, other));
+  await supabase.storage.from(LOGO_BUCKET).remove(stale);
+
+  const { data } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
+  const logoUrl = `${data.publicUrl}?v=${Date.now()}`;
+  await updateOrganization(orgId, { logoUrl });
+  return logoUrl;
+}
+
+export async function removeOrganizationLogo(orgId: string): Promise<void> {
+  const paths = Object.values(LOGO_TYPES).map((ext) =>
+    logoObjectPath(orgId, ext)
+  );
+  const { error } = await supabase.storage.from(LOGO_BUCKET).remove(paths);
+  if (error) throw error;
+  await updateOrganization(orgId, { logoUrl: null });
+}
+
 export async function inviteMember(
   orgId: string,
   email: string,

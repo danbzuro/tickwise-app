@@ -20,7 +20,7 @@ interface SettingsGeneralPageProps {
   schedules: CronSchedule[];
   recipients: string[];
   onChangeOrgName: (name: string) => void;
-  onChangeOrgLogo: (url: string | null) => void;
+  onChangeOrgLogo: (file: File | null) => Promise<void>;
   onAdd: () => void;
   onRemove: (id: string) => void;
   onChangeTime: (id: string, time: string) => void;

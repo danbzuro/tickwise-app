@@ -99,11 +99,12 @@ function hostOf(url: string): string {
 function decodeXml(value: string): string {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) =>
       String.fromCodePoint(parseInt(n, 16))
@@ -130,6 +131,24 @@ function stripTags(value: string): string {
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function squash(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+// Google News pone el titular otra vez en la descripción, más el nombre del medio.
+function summaryIfNew(title: string, summary: string): string {
+  const next = squash(summary);
+  const prev = squash(title);
+  if (!next || !prev) return next ? summary : "";
+  if (next === prev) return "";
+  const [shorter, longer] =
+    next.length < prev.length ? [next, prev] : [prev, next];
+  if (longer.includes(shorter) && longer.length - shorter.length <= 60) {
+    return "";
+  }
+  return summary;
 }
 
 function articleUrl(link: string): string {
@@ -186,7 +205,10 @@ function parseRss(xml: string): NewsHit[] {
     const chunk = block.split(/<\/item>/i)[0] ?? "";
     const title = stripTags(tag(chunk, "title"));
     const link = tag(chunk, "link") || tag(chunk, "guid");
-    const summary = stripTags(tag(chunk, "description")).slice(0, 1000);
+    const summary = summaryIfNew(
+      title,
+      stripTags(tag(chunk, "description")).slice(0, 1000)
+    );
     const published = Date.parse(tag(chunk, "pubDate"));
     if (!title || !link || Number.isNaN(published)) continue;
     const url = articleUrl(link);
@@ -312,7 +334,10 @@ export async function searchCompanyNews(
       title: title.slice(0, 500),
       url,
       outletUrl: `https://${hostOf(url)}`,
-      summary: summary.replace(/\s+/g, " ").trim().slice(0, 1000),
+      summary: summaryIfNew(
+        title,
+        summary.replace(/\s+/g, " ").trim().slice(0, 1000)
+      ),
       publishedAt: published ?? new Date().toISOString(),
     });
   }
