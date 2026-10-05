@@ -136,6 +136,7 @@ export type Database = {
           title: string
           url: string
           why_it_matters: string | null
+          dismissed: boolean
         }
         Insert: {
           category: Database["public"]["Enums"]["feed_category"]
@@ -155,6 +156,7 @@ export type Database = {
           title: string
           url: string
           why_it_matters?: string | null
+          dismissed?: boolean
         }
         Update: {
           category?: Database["public"]["Enums"]["feed_category"]
@@ -174,6 +176,7 @@ export type Database = {
           title?: string
           url?: string
           why_it_matters?: string | null
+          dismissed?: boolean
         }
         Relationships: [
           {
@@ -195,6 +198,32 @@ export type Database = {
             columns: ["source_id"]
             isOneToOne: false
             referencedRelation: "sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feed_item_reads: {
+        Row: {
+          feed_item_id: string
+          read_at: string
+          user_id: string
+        }
+        Insert: {
+          feed_item_id: string
+          read_at?: string
+          user_id: string
+        }
+        Update: {
+          feed_item_id?: string
+          read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feed_item_reads_feed_item_id_fkey"
+            columns: ["feed_item_id"]
+            isOneToOne: false
+            referencedRelation: "feed_items"
             referencedColumns: ["id"]
           },
         ]
@@ -443,6 +472,7 @@ export type Database = {
       is_org_admin: { Args: { _org: string }; Returns: boolean }
       is_org_member: { Args: { _org: string }; Returns: boolean }
       is_platform_admin: { Args: never; Returns: boolean }
+      dismiss_feed_items: { Args: { _ids: string[] }; Returns: undefined }
       slugify: { Args: { _text: string }; Returns: string }
     }
     Enums: {

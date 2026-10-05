@@ -8,6 +8,8 @@ import {
   ChevronUp,
   Lightbulb,
   EyeOff,
+  Check,
+  Trash2,
 } from "lucide-react";
 import {
   Card,
@@ -83,6 +85,8 @@ function dayLabel(key: string) {
 interface FeedPageProps {
   items: FeedItem[];
   noiseRules: NoiseRules;
+  onMarkRead: (ids: string[], read: boolean) => Promise<void>;
+  onDismiss: (ids: string[]) => Promise<void>;
 }
 
 // Select estilizado reutilizable para los filtros
@@ -129,13 +133,20 @@ const MATERIALITIES: FeedItem["materiality"][] = [
   "noteworthy",
 ];
 
-export function FeedPage({ items, noiseRules }: FeedPageProps) {
+export function FeedPage({
+  items,
+  noiseRules,
+  onMarkRead,
+  onDismiss,
+}: FeedPageProps) {
   const [selectedDay, setSelectedDay] = useState("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   // Filtros por los 3 criterios de los badges
   const [company, setCompany] = useState("all");
   const [category, setCategory] = useState("all");
   const [materiality, setMateriality] = useState("all");
+  const [inbox, setInbox] = useState<"unread" | "read">("unread");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Días disponibles (únicos, ordenados desc)
   const days = useMemo(() => {
@@ -166,8 +177,32 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
     [filtered, noiseRules]
   );
 
+  const visible = useMemo(
+    () => kept.filter((item) => (inbox === "read" ? item.read : !item.read)),
+    [kept, inbox]
+  );
+
   function toggleExpand(id: string) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function mark(ids: string[], read: boolean) {
+    await onMarkRead(ids, read);
+    setSelected(new Set());
+  }
+
+  async function dismiss(ids: string[]) {
+    await onDismiss(ids);
+    setSelected(new Set());
   }
 
   return (
@@ -177,7 +212,8 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Feed</h1>
           <p className="text-sm text-muted-foreground">
-            {kept.length} relevant · {screened.length} screened as noise
+            {visible.length} {inbox === "read" ? "read" : "unread"} ·{" "}
+            {screened.length} screened as noise
           </p>
         </div>
 
@@ -213,6 +249,35 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
         <span className="text-xs font-medium text-muted-foreground">
           Filter by
         </span>
+
+        <div className="flex rounded-md border border-input p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setInbox("unread");
+              setSelected(new Set());
+            }}
+            className={cn(
+              "rounded px-2 py-1",
+              inbox === "unread" ? "bg-accent font-medium" : "text-muted-foreground"
+            )}
+          >
+            Unread
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setInbox("read");
+              setSelected(new Set());
+            }}
+            className={cn(
+              "rounded px-2 py-1",
+              inbox === "read" ? "bg-accent font-medium" : "text-muted-foreground"
+            )}
+          >
+            Read
+          </button>
+        </div>
 
         <FilterSelect value={company} onChange={setCompany} label="company">
           <option value="all">All companies</option>
@@ -262,21 +327,60 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
         )}
       </div>
 
+      {selected.size > 0 && (
+        <div className="sticky top-16 z-20 flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm shadow-sm">
+          <span className="text-muted-foreground">{selected.size} selected</span>
+          <Button
+            size="sm"
+            onClick={() => mark([...selected], inbox !== "read")}
+          >
+            <Check className="h-3.5 w-3.5" />
+            {inbox === "read" ? "Mark as unread" : "Mark as read"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-destructive hover:text-destructive"
+            onClick={() => dismiss([...selected])}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
+      )}
+
       {/* Lista de noticias relevantes */}
       <div className="grid gap-4">
-        {kept.length === 0 && (
+        {visible.length === 0 && (
           <p className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-            No relevant news for this selection.
+            {inbox === "read"
+              ? "No read news for this selection."
+              : "No unread news for this selection."}
           </p>
         )}
 
-        {kept.map((item) => {
+        {visible.map((item) => {
           const isOpen = expanded[item.id];
           const mat = materialityBadge[item.materiality];
           return (
             <Card key={item.id} className="transition-shadow hover:shadow-md">
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    aria-label={`Select ${item.title}`}
+                    className="h-4 w-4 rounded border-input"
+                  />
                   <Badge variant="outline" className="font-mono">
                     {item.tick}
                   </Badge>
@@ -315,7 +419,7 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
                 </CardContent>
               )}
 
-              <CardContent className="flex items-center justify-between pt-0">
+              <CardContent className="flex items-center justify-between gap-2 pt-0">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -332,14 +436,33 @@ export function FeedPage({ items, noiseRules }: FeedPageProps) {
                     </>
                   )}
                 </Button>
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={buttonVariants({ variant: "ghost", size: "sm" })}
-                >
-                  Open <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => mark([item.id], !item.read)}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {item.read ? "Mark as unread" : "Mark as read"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => dismiss([item.id])}
+                    aria-label={`Delete ${item.title}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "ghost", size: "sm" })}
+                  >
+                    Open <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
               </CardContent>
             </Card>
           );

@@ -112,6 +112,7 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
       .from("feed_items")
       .select("*")
       .eq("org_id", orgId)
+      .eq("dismissed", false)
       .order("published_at", { ascending: false }),
     supabase
       .from("cron_schedules")
@@ -161,6 +162,16 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
     });
   }
 
+  const { data: auth } = await supabase.auth.getUser();
+  const readIds = new Set<string>();
+  if (auth.user) {
+    const { data: reads } = await supabase
+      .from("feed_item_reads")
+      .select("feed_item_id")
+      .eq("user_id", auth.user.id);
+    for (const row of reads ?? []) readIds.add(row.feed_item_id);
+  }
+
   const sourceNameById = new Map(
     (sourcesRes.data ?? []).map((s) => [s.id, s.name])
   );
@@ -188,6 +199,7 @@ export async function loadOrgData(orgId: string): Promise<OrgData> {
         publishedAt: f.published_at,
         category: f.category,
         materiality: f.materiality,
+        read: readIds.has(f.id),
       };
     }),
     schedules: (schedulesRes.data ?? []).map((s) => ({
@@ -482,7 +494,35 @@ export async function removeMember(id: string): Promise<void> {
   if (error) throw error;
 }
 
-// Dispara el scrape real y recarga la org para reflejar el feed nuevo.
+export async function markFeedRead(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error("Not authenticated");
+  // ignoreDuplicates: remarcar como leída no necesita UPDATE (no hay policy)
+  const { error } = await supabase.from("feed_item_reads").upsert(
+    ids.map((id) => ({ feed_item_id: id, user_id: auth.user.id })),
+    { onConflict: "feed_item_id,user_id", ignoreDuplicates: true }
+  );
+  if (error) throw error;
+}
+
+export async function markFeedUnread(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || !auth.user) throw new Error("Not authenticated");
+  const { error } = await supabase
+    .from("feed_item_reads")
+    .delete()
+    .eq("user_id", auth.user.id)
+    .in("feed_item_id", ids);
+  if (error) throw error;
+}
+
+export async function dismissFeedItems(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await supabase.rpc("dismiss_feed_items", { _ids: ids });
+  if (error) throw error;
+}
 export async function runCron(orgId: string): Promise<OrgData> {
   const { data, error } = await supabase.functions.invoke("scrape", {
     body: { orgId },

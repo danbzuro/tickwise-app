@@ -146,6 +146,7 @@ async function scrape(req: Request) {
           materiality: item.hit.materiality,
           screened: reason != null,
           screened_reason: reason,
+          // dismissed no se manda: un upsert no debe revivir una nota descartada
         };
       });
 

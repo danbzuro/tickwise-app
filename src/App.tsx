@@ -461,6 +461,45 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
     [report]
   );
 
+  const dismissFeedH = useCallback(
+    async (ids: string[]) => {
+      await report(
+        ids.length === 1 ? "News removed" : `${ids.length} news removed`,
+        async () => {
+          await api.dismissFeedItems(ids);
+          const gone = new Set(ids);
+          setData((d) =>
+            d
+              ? { ...d, feedItems: d.feedItems.filter((item) => !gone.has(item.id)) }
+              : d
+          );
+        }
+      );
+    },
+    [report]
+  );
+
+  const markFeedH = useCallback(
+    async (ids: string[], read: boolean) => {
+      await report(read ? "Marked as read" : "Marked as unread", async () => {
+        if (read) await api.markFeedRead(ids);
+        else await api.markFeedUnread(ids);
+        const touched = new Set(ids);
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                feedItems: d.feedItems.map((item) =>
+                  touched.has(item.id) ? { ...item, read } : item
+                ),
+              }
+            : d
+        );
+      });
+    },
+    [report]
+  );
+
   const resendInviteH = useCallback((_id: string) => {
     // Mock: en un backend real re-dispararía el email de invitación
   }, []);
@@ -515,7 +554,12 @@ function Workspace({ signOut }: { signOut: () => Promise<void> }) {
               <Route
                 path="/feed"
                 element={
-                  <FeedPage items={data.feedItems} noiseRules={data.noiseRules} />
+                  <FeedPage
+                    items={data.feedItems}
+                    noiseRules={data.noiseRules}
+                    onMarkRead={markFeedH}
+                    onDismiss={dismissFeedH}
+                  />
                 }
               />
               <Route

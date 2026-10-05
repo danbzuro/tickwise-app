@@ -23,6 +23,7 @@ export interface FeedItem {
   publishedAt: string; // ISO
   category: "Earnings" | "Product" | "M&A" | "Regulation" | "Market";
   materiality: Materiality;
+  read?: boolean;
 }
 
 export interface CronSchedule {
