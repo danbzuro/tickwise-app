@@ -183,6 +183,13 @@ export function FeedPage({
     [kept, inbox]
   );
 
+  // El filtro Unread/Read también aplica al ruido
+  const visibleScreened = useMemo(
+    () =>
+      screened.filter(({ item }) => (inbox === "read" ? item.read : !item.read)),
+    [screened, inbox]
+  );
+
   function toggleExpand(id: string) {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
@@ -216,7 +223,7 @@ export function FeedPage({
           <h1 className="text-2xl font-semibold tracking-tight">Feed</h1>
           <p className="text-sm text-muted-foreground">
             {visible.length} {inbox === "read" ? "read" : "unread"} ·{" "}
-            {screened.length} screened as noise
+            {visibleScreened.length} screened as noise
           </p>
         </div>
 
@@ -478,41 +485,69 @@ export function FeedPage({
       </div>
 
       {/* Sección "Screened out" (ruido filtrado) */}
-      {screened.length > 0 && (
+      {visibleScreened.length > 0 && (
         <details className="group rounded-lg border border-dashed">
           <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm text-muted-foreground">
             <EyeOff className="h-4 w-4" />
             <span className="font-medium">
-              {screened.length} items screened out as noise
+              {visibleScreened.length} items screened out as noise
             </span>
             <ChevronDown className="ml-auto h-4 w-4 transition-transform group-open:rotate-180" />
           </summary>
           <div className="space-y-2 border-t p-4 pt-3">
-            {screened.map(({ item, reason }) => (
+            {visibleScreened.map(({ item, reason }) => (
               <div
                 key={item.id}
                 className="flex items-start justify-between gap-3 rounded-md px-1 py-1.5"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {item.tick}
+                <div className="flex min-w-0 items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    aria-label={`Select ${item.title}`}
+                    className="mt-0.5 h-4 w-4 rounded border-input"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {item.tick}
+                      </span>
+                      <span className="truncate text-sm">{item.title}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {reason}
                     </span>
-                    <span className="truncate text-sm">{item.title}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {reason}
-                  </span>
                 </div>
-                <a
-                  href={item.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                  aria-label="Open"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => mark([item.id], !item.read)}
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {item.read ? "Mark as unread" : "Mark as read"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => dismiss([item.id])}
+                    aria-label={`Delete ${item.title}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <a
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Open"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
               </div>
             ))}
           </div>
