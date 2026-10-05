@@ -108,6 +108,15 @@ async function scrape(req: Request) {
 
   if (!rules) throw new HttpError(500, "Noise rules are missing");
 
+  const perplexityKey = Deno.env.get("PERPLEXITY_API_KEY");
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!perplexityKey || !openaiKey) {
+    throw new HttpError(
+      500,
+      "Set PERPLEXITY_API_KEY and OPENAI_API_KEY on the scrape function"
+    );
+  }
+
   const hours = windowHours(rules.max_lookback_hours, lastRun?.finished_at ?? null);
   const noise = {
     excludeTerms: rules.exclude_terms ?? [],
@@ -124,8 +133,8 @@ async function scrape(req: Request) {
   if (runError || !run) throw new HttpError(500, runError?.message ?? "Could not start run");
 
   try {
-    const found = await collect(sources ?? [], hours);
-    const scored = await scoreWithModel(found, guides ?? [], Deno.env.get("OPENAI_API_KEY"));
+    const found = await collect(sources ?? [], hours, perplexityKey);
+    const scored = await scoreWithModel(found, guides ?? [], openaiKey);
     const rows = scored
       .filter((item) => item.hit.aboutCompany)
       .map((item) => {
@@ -196,7 +205,8 @@ interface Collected {
 
 async function collect(
   sources: { id: string; name: string; tick: string | null; url: string }[],
-  hours: number
+  hours: number,
+  apiKey: string
 ): Promise<Collected[]> {
   const windowMs = hours * 3_600_000;
   const failures: string[] = [];
@@ -204,7 +214,7 @@ async function collect(
     sources.map(async (source) => {
       const company = companyRef(source);
       try {
-        const hits = await searchCompanyNews(company, windowMs);
+        const hits = await searchCompanyNews(company, windowMs, apiKey);
         return hits.map((hit) => ({
           sourceId: source.id,
           tick: source.tick,
@@ -233,14 +243,27 @@ async function collect(
   return collected.slice(0, 40);
 }
 
-// Si hay OPENAI_API_KEY, la rúbrica de la org reemplaza la lectura heurística.
+// La rúbrica de la org clasifica lo que devolvió la búsqueda.
 async function scoreWithModel(
   items: Collected[],
   guides: { level: string; content: string }[],
-  apiKey: string | undefined
+  apiKey: string
 ): Promise<Collected[]> {
-  if (!apiKey || items.length === 0) return items;
+  if (items.length === 0) return items;
 
+  const scored: Collected[] = [];
+  for (let index = 0; index < items.length; index += 12) {
+    const chunk = items.slice(index, index + 12);
+    scored.push(...(await scoreChunk(chunk, guides, apiKey)));
+  }
+  return scored;
+}
+
+async function scoreChunk(
+  items: Collected[],
+  guides: { level: string; content: string }[],
+  apiKey: string
+): Promise<Collected[]> {
   const guideText = guides
     .map((guide) => `## ${guide.level}\n${guide.content}`)
     .join("\n\n");
@@ -254,72 +277,73 @@ async function scoreWithModel(
     summary: item.hit.summary,
   }));
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You score company news for an investment desk. Reply with JSON {\"items\":[{\"url\":string,\"materiality\":\"material\"|\"potentially\"|\"noteworthy\",\"category\":\"Earnings\"|\"Product\"|\"M&A\"|\"Regulation\"|\"Market\",\"whyItMatters\":string,\"aboutCompany\":boolean}]}. aboutCompany is false when the story is not about that company. whyItMatters is one sentence on estimates, margins, or valuation. Use the rubric.",
-          },
-          {
-            role: "user",
-            content: `Rubric:\n${guideText}\n\nItems:\n${JSON.stringify(payload)}`,
-          },
-        ],
-      }),
-    });
-    if (!response.ok) return items;
-    const json = await response.json();
-    const text = json?.choices?.[0]?.message?.content;
-    if (typeof text !== "string") return items;
-    const parsed = JSON.parse(text) as {
-      items?: {
-        url?: string;
-        materiality?: Materiality;
-        category?: FeedCategory;
-        whyItMatters?: string;
-        aboutCompany?: boolean;
-      }[];
-    };
-    const byUrl = new Map(
-      (parsed.items ?? [])
-        .filter((item) => item.url)
-        .map((item) => [item.url as string, item])
-    );
-    return items.map((item) => {
-      const scored = byUrl.get(item.hit.url);
-      if (!scored) return item;
-      return {
-        ...item,
-        hit: {
-          ...item.hit,
-          materiality: isMateriality(scored.materiality)
-            ? scored.materiality
-            : item.hit.materiality,
-          category: isCategory(scored.category)
-            ? scored.category
-            : item.hit.category,
-          whyItMatters:
-            typeof scored.whyItMatters === "string"
-              ? scored.whyItMatters.slice(0, 500)
-              : item.hit.whyItMatters,
-          aboutCompany: scored.aboutCompany !== false,
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You score company news for an investment desk. Reply with JSON {\"items\":[{\"url\":string,\"materiality\":\"material\"|\"potentially\"|\"noteworthy\",\"category\":\"Earnings\"|\"Product\"|\"M&A\"|\"Regulation\"|\"Market\",\"whyItMatters\":string,\"aboutCompany\":boolean}]}. aboutCompany is false when the story is not about that company, ticker, or domain. whyItMatters is one sentence on estimates, margins, or valuation, empty when aboutCompany is false. Use the rubric. noteworthy means screen it out.",
         },
-      };
-    });
-  } catch {
-    return items;
+        {
+          role: "user",
+          content: `Rubric:\n${guideText || "No custom rubric. Use standard investment materiality."}\n\nItems:\n${JSON.stringify(payload)}`,
+        },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 180);
+    throw new Error(`Materiality scoring failed (${response.status}) ${detail}`);
   }
+  const json = await response.json();
+  const text = json?.choices?.[0]?.message?.content;
+  if (typeof text !== "string") throw new Error("Materiality scoring returned no content");
+  const parsed = JSON.parse(text) as {
+    items?: {
+      url?: string;
+      materiality?: Materiality;
+      category?: FeedCategory;
+      whyItMatters?: string;
+      aboutCompany?: boolean;
+    }[];
+  };
+  const byUrl = new Map(
+    (parsed.items ?? [])
+      .filter((item) => item.url)
+      .map((item) => [item.url as string, item])
+  );
+  return items.map((item) => {
+    const scored = byUrl.get(item.hit.url);
+    if (!scored) {
+      return { ...item, hit: { ...item.hit, aboutCompany: false } };
+    }
+    return {
+      ...item,
+      hit: {
+        ...item.hit,
+        materiality: isMateriality(scored.materiality)
+          ? scored.materiality
+          : item.hit.materiality,
+        category: isCategory(scored.category)
+          ? scored.category
+          : item.hit.category,
+        whyItMatters:
+          typeof scored.whyItMatters === "string"
+            ? scored.whyItMatters.slice(0, 500)
+            : item.hit.whyItMatters,
+        aboutCompany: scored.aboutCompany !== false,
+      },
+    };
+  });
 }
 
 function isMateriality(value: unknown): value is Materiality {
