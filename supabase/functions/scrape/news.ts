@@ -461,13 +461,7 @@ async function searchGoogleNews(
   return filterHits(wider, windowMs, company).slice(0, 12);
 }
 
-function recency(hours: number): "hour" | "day" | "week" {
-  if (hours <= 1) return "hour";
-  if (hours <= 24) return "day";
-  return "week";
-}
-
-// MM/DD/YYYY, que es el formato que pide el filtro de fecha de Perplexity.
+// MM/DD/YYYY, formato del filtro de fecha de Perplexity.
 function usDate(ms: number): string {
   const date = new Date(ms);
   return `${date.getUTCMonth() + 1}/${date.getUTCDate()}/${date.getUTCFullYear()}`;
@@ -490,7 +484,6 @@ export async function searchCompanyNews(
   apiKey: string | undefined
 ): Promise<NewsHit[]> {
   if (!apiKey) return searchGoogleNews(company, windowMs);
-  const hours = windowMs / 3_600_000;
   const query = perplexityNewsQuery(company);
 
   const response = await fetch("https://api.perplexity.ai/search", {
@@ -502,7 +495,7 @@ export async function searchCompanyNews(
     body: JSON.stringify({
       query,
       max_results: 10,
-      search_recency_filter: recency(hours),
+      // Perplexity no acepta recency junto con el filtro de fecha.
       search_after_date_filter: usDate(Date.now() - windowMs),
     }),
   });
